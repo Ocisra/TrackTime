@@ -7,7 +7,13 @@
 #include <utility>
 #include <vector>
 
-
+/**
+ * Get the time the system was up since last boot
+ *
+ * System uptime is the first word stored in '/proc/uptime'
+ *
+ * @return system uptime in seconds
+ */
 float getSystemUptime () {
     float systemUptime;
     std::ifstream uptime("/proc/uptime");
@@ -17,10 +23,26 @@ float getSystemUptime () {
     return systemUptime;
 }
 
+/**
+ * Check if a string contains at least one digit
+ *
+ * @param str : the string to check
+ *
+ * @return true  : if str contains at least a digit
+ *         false : if str does not contain any digit
+ */
 bool containsNumber(std::string& str){
     return (str.find_first_of("0123456789") != std::string::npos);
 }
 
+/**
+ * Initiate the process buffer
+ *
+ * Look for all directories named '/proc/XXXX', each one represent one process
+ * In these directories, read './stat', in brackets is the process name and 22th word is process start time since boot
+ *
+ * @return process buffer
+ */
 std::map <int, std::pair<std::string, int>> initProcessBuffer () {
     std::map <int, std::pair<std::string, int>> processBuffer;
     std::string path;
@@ -59,45 +81,29 @@ std::map <int, std::pair<std::string, int>> initProcessBuffer () {
     return processBuffer;
 }
 
-std::vector <int> initPidList(std::map<int, std::pair<std::string, int>>& processBuffer){
-    std::vector <int> pidList;
-    for (auto& s : processBuffer) {
-        pidList.push_back(s.first);
-    }
-    return pidList;
-}
-
-std::vector <int> getNewPidList () {
-    std::vector <int> newPidList;
-    std::string path;
-    int pid;
-    for (auto& p: std::filesystem::directory_iterator("/proc")) {
-        if (p.is_directory()) {
-            path = p.path().string();
-            if (containsNumber(path)) {
-                pid = std::stoi(path.substr(6));
-                newPidList.push_back(pid);
-            }
-        }
-    }
-    return newPidList;
-}
-
 /**
  * TODO
- * @param processBuffer
- * @param pidList
- * @param newPidList
- * @param offset
+ *
+ * TODO
+ * TODO
+ * TODO
+ * 
+ * @param processBuffer : the process buffer to update
+ * @param pidList : all PIDs present in the process buffer
+ * @param newPidList : all PIDs actually running
+ * @param offset : TODO
  */
 void updateProcessBuffer(std::map<int, std::pair<std::string, int>>& processBuffer, std::vector<int>& pidList, std::vector<int>& newPidList, int& offset) {
-    if (pidList.size() + offset < newPidList.size()) {
+    // All of the old processes fits in new processes minus offset. If there are more processes than those in newPL, I have to add them to the buffer
+    if (pidList.size() - offset < newPidList.size()) {
         std::string path;
         int wordCount;
         char c;
         int processStartTime;
-        for (auto i = pidList.size()+offset; i < newPidList.size() - 1; i++) {
-            path = &"/proc/" [ newPidList[i]];
+
+        // I start from the last old process and add all following process to the buffer
+        for (auto i = pidList.size() - offset; i < newPidList.size(); i++) {
+            path = "/proc/" + std::to_string(newPidList[i]) + "/stat";
             std::ifstream pidStat (path);
             if(!pidStat.is_open())
                 throw std::ios_base::failure("File not found");
@@ -116,21 +122,55 @@ void updateProcessBuffer(std::map<int, std::pair<std::string, int>>& processBuff
                     wordCount += 1;
             }
             pidStat >> processStartTime;
+            std::cout << processName << " added\n";
             processBuffer.insert({newPidList[i], std::make_pair(processName, processStartTime)});
         }
     }
 }
 
-int main() {
-    std::map<int, std::pair<std::string, int>> processBuffer = initProcessBuffer();
+std::map<std::string, float> initTimeBuffer (std::map<int, std::pair<std::string, int>>& processBuffer) {
+    std::map <std::string, float> timeBuffer;
     for (auto& s : processBuffer) {
-        std::cout << s.first << " " << s.second.first << " " << s.second.second << std::endl;
+        timeBuffer.insert({s.second.first, 0});
     }
+    return timeBuffer;
 
-    std::vector <int> pidList = initPidList(processBuffer);
-    for (auto& s : pidList) {
-        std::cout << s << std::endl;
+}
+
+std::vector <int> initPidList (std::map<int, std::pair<std::string, int>>& processBuffer){
+    std::vector <int> pidList;
+    for (auto& s : processBuffer) {
+        pidList.push_back(s.first);
     }
+    return pidList;
+}
+
+void updateTimeBuffer (std::map<std::string, float>& timeBuffer, std::string& processName, float& processUptime) {
+    timeBuffer[processName] += processUptime;
+}
+
+std::vector <int> getNewPidList () {
+    std::vector <int> newPidList;
+    std::string path;
+    int pid;
+    for (auto& p: std::filesystem::directory_iterator("/proc")) {
+        if (p.is_directory()) {
+            path = p.path().string();
+            if (containsNumber(path)) {
+                pid = std::stoi(path.substr(6));
+                newPidList.push_back(pid);
+            }
+        }
+    }
+    return newPidList;
+}
+
+int main() {
+    const int CLK_TCK = sysconf(_SC_CLK_TCK);
+
+    std::map<int, std::pair<std::string, int>> processBuffer = initProcessBuffer();
+    std::map <std::string, float> timeBuffer = initTimeBuffer(processBuffer);
+    std::vector<int> pidList = initPidList(processBuffer);
 
     while (true) {
         std::vector<int> newPidList = getNewPidList();
@@ -141,11 +181,16 @@ int main() {
         }
 
         int offset = 0;
-        for (auto i = 0; i+offset < pidList.size() - 1; i++) {
-            while (pidList[i+offset] != newPidList[i] && i <= pidList.size() - 1) {
-                std::cout << pidList[i+offset] << " not found\n";
-                std::cout << processBuffer.find(pidList[i+offset])->second.first << " " << processBuffer.find(pidList[i+offset])->second.second << std::endl;
-                processBuffer.erase(processBuffer.find(pidList[i+offset]));
+        for (auto i = 0; i + offset < pidList.size(); i++) {
+            while ((i >= newPidList.size() - 1 || pidList[i + offset] != newPidList[i]) && i + offset < pidList.size()) {
+                std::string processName = processBuffer.find(pidList[i + offset])->second.first;
+                int processStartTime = processBuffer.find(pidList[i + offset])->second.second;
+                float systemUptime = getSystemUptime();
+                float processUptime = systemUptime - (processStartTime / CLK_TCK); // in seconds
+                std::cout << pidList[i + offset] << " not found\n";
+                std::cout << processName << " " << processStartTime << " " << processUptime << std::endl;
+                processBuffer.erase(processBuffer.find(pidList[i + offset]));
+                updateTimeBuffer(timeBuffer, processName, processUptime);
                 offset++;
             }
         }
@@ -154,49 +199,9 @@ int main() {
         pidList = newPidList;
         std::cout << "a new one is out there\n";
     }
-    return 0;
-
-
-    std::cout << "Hello, World!" << std::endl;
-    int pid; //proc qu'on etudie
-    int wordCount; //compteur des mots dans le fichier
-    char c; //caractere sur lequel est le curseur
-    int nextPid = 1000; //pid de depart
-    int pStartTime; //jiffies auquel le proc a demarre
-    float processUptime; //uptime du proc (en s)
-    const int CLK_TCK = sysconf(_SC_CLK_TCK); //nb de jiffies par seconde
-    std::cout << "Clock tick per second : " << CLK_TCK << std::endl;
-    float systemUptime = getSystemUptime(); // system uptime (en s)
-    std::cout << "Current system uptime : " << systemUptime;
-    while (nextPid < 20000) { // pid auquel j'arrete d'en chercher de nouveaux
-        pid = nextPid;
-        //std::cout << pid;
-        std::ifstream pidStat("/proc/" + std::to_string(pid) + "/stat"); // ouvrir /proc/PID/stat
-        if (pidStat.is_open()) {
-            //std::cout << " opened" << std::endl;
-            wordCount = 1;
-            while (wordCount != 22) { // chercher le 22e mot = pStartTime
-                pidStat.get(c);
-                if (c == ' ')
-                    wordCount += 1;
-                if(wordCount == 2) // 2e mot = nom du proc
-                    std::cout << c;
-            }
-            pidStat >> pStartTime; // on a trouve pStartTime
-            //std::cout << pStartTime << std::endl;
-            processUptime = (systemUptime - (pStartTime / CLK_TCK)) / 60; // calcul de l'uptime (en s)
-            std::cout << processUptime << std::endl;
-        }
-        nextPid += 1; // pid suivant
-    }
-    return 0;
 }
 
 
-
 /// TODO
-/// uniformiser le nommage
 /// separer en plusieurs fichiers
 /// doc propre
-/// chercher le dernier pid
-/// trouver quand un proc est cree/suppr
