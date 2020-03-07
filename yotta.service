@@ -1,0 +1,8 @@
+[Unit]
+Description=Time Tracking Application
+Documentation=https://github.com/Ocisra/yotta
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/yotta_daemon
+Restart=always

@@ -7,62 +7,45 @@
 #include <sys/un.h>
 #include <cstdio>
 #include <iostream>
+#include <csignal>
 
 #include "timeTracking.h"
 #include "socket.h"
 
 
 
+/**
+ * Declare gSignalStatus
+ */
+namespace {
+    volatile std::sig_atomic_t gSignalStatus;
+}
 
-void error(const char *msg)
-{
-    perror(msg);
-    exit(0);
+/**
+ * Handle the signal sent to the program
+ *
+ * As it is impossible to pass customs arguments to a signal handler,
+ * I can almost only change the value of a volatile std::sig_atomic_t variable
+ *
+ * @param signum : number corresponding to the signal received
+ *                 SIGTERM = 15
+ */
+void signalHandler (int signum) {
+    gSignalStatus = signum;
 }
 
 
+
+
 int main () {
+    std::signal(SIGTERM, signalHandler);
+
     std::map<std::string, float> uptimeBuffer;
+    std::map<int, std::pair<std::string, int>> processBuffer;
 
-    std::thread mythread(ySocket, std::ref(uptimeBuffer));
+    std::thread thSocket(ySocket, std::ref(uptimeBuffer), std::ref(processBuffer), std::ref(gSignalStatus));
 
-/*
- ********************
- * THIS TEST SOCKET *
- ********************
-    void error(const char *);
-
-    int sockfd, servlen, n;
-    struct sockaddr_un serv_addr;
-    char buffer[82];
-
-    bzero((char *) &serv_addr, sizeof(serv_addr));
-    serv_addr.sun_family = AF_UNIX;
-    strcpy(serv_addr.sun_path, "5687");
-    servlen = strlen(serv_addr.sun_path) + sizeof(serv_addr.sun_family);
-    if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
-        error("Creating socket");
-    sleep(5);
-    if (connect(sockfd, (struct sockaddr *) &serv_addr, servlen) < 0)
-        error("Connecting");
-    printf("Please enter your message: ");
-    bzero(buffer, 82);
-    fgets(buffer, 80, stdin);
-
-    write(sockfd, buffer, strlen(buffer));
-
-    n = read(sockfd, buffer, 80);
-
-    printf("The return message was\n");
-    std::cout << buffer;
-
-    write(1, buffer, n);
-
-    mythread.join();
-
-    close(sockfd);
-*/
-    timeTracking(uptimeBuffer);
+    timeTracking(uptimeBuffer, processBuffer, gSignalStatus);
 
     return 0;
 }

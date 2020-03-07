@@ -1,9 +1,3 @@
-/**
- * @file main.cpp
- * @author Ocisra
- * @version 0.1.0
- * @copyright Ocisra
- */
 #include <csignal>
 #include <filesystem>
 #include <fstream>
@@ -17,26 +11,6 @@
 #include "timeTracking.h"
 
 const std::string DATA_DIR = "/var/lib/yotta/";
-
-/**
- * Declare gSignalStatus
- */
-namespace {
-    volatile std::sig_atomic_t gSignalStatus;
-}
-
-/**
- * Handle the signal sent to the program
- *
- * As it is impossible to pass customs arguments to a signal handler,
- * I can almost only change the value of a volatile std::sig_atomic_t variable
- *
- * @param signum : number corresponding to the signal received
- *                 SIGTERM = 15
- */
-void signalHandler (int signum) {
-    gSignalStatus = signum;
-}
 
 /**
  * Get the time the system was up since last boot
@@ -71,7 +45,7 @@ bool containsNumber(std::string& str){
  * @param str
  * @return
  */
-bool isNumber (std::string& str) {
+bool isInt (std::string& str) {
     bool containsOnlyNumber = true;
     for (auto& s : str) {
         if (!isdigit(s)) {
@@ -146,8 +120,10 @@ std::map <int, std::pair<std::string, int>> initProcessBuffer () {
  * @param newPidList : all PIDs actually running
  * @param offset : difference between the place of the last process in pidList and his place in newPidList
  */
-void updateProcessBuffer(std::map<int, std::pair<std::string, int>>& processBuffer, std::vector<int>& pidList, std::vector<int>& newPidList, int& offset) {
-    // All of the old processes fits in new processes minus offset. If there are more processes than those in newPL, I have to add them to the buffer
+void updateProcessBuffer(std::map<int, std::pair<std::string, int>>& processBuffer, std::vector<int>& pidList,
+                         std::vector<int>& newPidList, int& offset) {
+    // All of the old processes fits in new processes minus offset. If there are more processes than those in newPL,
+    // I have to add them to the buffer
     if (pidList.size() - offset < newPidList.size()) {
         std::string path;
         int wordCount;
@@ -239,7 +215,9 @@ std::vector <int> getNewPidList () {
  * @param uptimeBuffer : buffer of uptimes of already closed program of the actual boot
  * @param CLK_TCK : number of jiffies in a second
  */
-void save (std::map <int, std::pair<std::string, int>>& processBuffer, std::map <std::string, float>& uptimeBuffer, const int& CLK_TCK) {
+void save(std::map<int, std::pair<std::string, int>> &processBuffer, std::map<std::string, float> &uptimeBuffer,
+          const int &CLK_TCK, volatile sig_atomic_t& gSignalStatus) {
+
     float systemUptime = getSystemUptime();
     std::string processName;
     float processUptime;
@@ -258,13 +236,13 @@ void save (std::map <int, std::pair<std::string, int>>& processBuffer, std::map 
         uptimeDataFileR.open(uptimeDataFile);
     }
     if (!uptimeDataFileR.is_open())
-        throw std::ios_base::failure("file not found"); //TODO error surement permission ...
+        throw std::ios_base::failure("file not found");
 
     float previousUptime;
     while (uptimeDataFileR >> processName) {
         std::string buf;
         uptimeDataFileR >> buf;
-        while (!isNumber(buf)) {
+        while (!isInt(buf)) {
             processName += " " + buf;
             uptimeDataFileR >> buf;
         }
@@ -286,18 +264,17 @@ void save (std::map <int, std::pair<std::string, int>>& processBuffer, std::map 
     std::exit(gSignalStatus);
 }
 
-void timeTracking(std::map <std::string, float>& uptimeBuffer) {
+void timeTracking(std::map<std::string, float> &uptimeBuffer, std::map<int, std::pair<std::string, int>> &processBuffer,
+                  volatile sig_atomic_t& gSignalStatus) {
     const int CLK_TCK = sysconf(_SC_CLK_TCK);
 
-    std::map <int, std::pair<std::string, int>> processBuffer = initProcessBuffer();
+    processBuffer = initProcessBuffer();
     uptimeBuffer = initUptimeBuffer(processBuffer);
     std::vector <int> pidList = getNewPidList(); //initiate the pidList
 
-    std::signal(SIGTERM, signalHandler);
-
     while (true) {
         if (gSignalStatus == SIGTERM)
-            save(processBuffer, uptimeBuffer, CLK_TCK);
+            save(processBuffer, uptimeBuffer, CLK_TCK, gSignalStatus);
         std::vector<int> newPidList = getNewPidList();
         while (newPidList == pidList) {
             sleep(2);
