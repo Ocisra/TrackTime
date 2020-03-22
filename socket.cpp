@@ -3,10 +3,8 @@
 #include <unistd.h>
 
 #include <sys/socket.h>
-#include <sys/types.h>
 #include <sys/un.h>
 #include <csignal>
-#include <iostream>
 
 #include "socket.h"
 
@@ -15,7 +13,7 @@
 void ySocket (std::map <std::string, float>& uptimeBuffer, std::map<int, std::pair<std::string, int>>& processBuffer,
               volatile sig_atomic_t& gSignalStatus) {
 
-    int sockfd, newsockfd, servlen, n;
+    int sockfd, newsockfd, servlen;
     socklen_t clilen;
     struct sockaddr_un cli_addr{}, serv_addr{};
     char buf[80];

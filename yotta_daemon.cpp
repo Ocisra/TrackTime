@@ -51,4 +51,3 @@ int main () {
 }
 
 //todo error handler
-//todo send map through socket
