@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "timeTracking.h"
+#include "yotta_daemon.h"
 
 const std::string DATA_DIR = "/var/lib/yotta/";
 
@@ -45,10 +46,10 @@ bool containsNumber(std::string& str){
  * @param str
  * @return
  */
-bool isInt (std::string& str) {
+bool isFloat (std::string& str) {
     bool containsOnlyNumber = true;
     for (auto& s : str) {
-        if (!isdigit(s)) {
+        if (!isdigit(s) && s != '.') {
             containsOnlyNumber = false;
             break;
         }
@@ -227,7 +228,6 @@ void save(std::map<int, std::pair<std::string, int>> &processBuffer, std::map<st
         processUptime = systemUptime - (processStartTime / CLK_TCK); // in seconds
         uptimeBuffer[processName] += processUptime;
     }
-
     std::string uptimeDataFile = DATA_DIR + "uptime";
     std::ifstream uptimeDataFileR (uptimeDataFile);
     if (!uptimeDataFileR.is_open()) {
@@ -242,7 +242,7 @@ void save(std::map<int, std::pair<std::string, int>> &processBuffer, std::map<st
     while (uptimeDataFileR >> processName) {
         std::string buf;
         uptimeDataFileR >> buf;
-        while (!isInt(buf)) {
+        while (!isFloat(buf)) {
             processName += " " + buf;
             uptimeDataFileR >> buf;
         }
@@ -253,19 +253,16 @@ void save(std::map<int, std::pair<std::string, int>> &processBuffer, std::map<st
         uptimeBuffer[processName] += processUptime;
     }
     uptimeDataFileR.close();
-
     std::ofstream uptimeDataFileW (uptimeDataFile, std::ios::out | std::ios::trunc);
     for (auto& s : uptimeBuffer) {
-        uptimeDataFileW << s.first << ": " << s.second << std::endl;
+        uptimeDataFileW << s.first << ": " << s.second << "\n";
     }
     uptimeDataFileW.close();
-
-
-    std::exit(gSignalStatus);
 }
 
 void timeTracking(std::map<std::string, float> &uptimeBuffer, std::map<int, std::pair<std::string, int>> &processBuffer,
                   volatile sig_atomic_t& gSignalStatus) {
+
     const int CLK_TCK = sysconf(_SC_CLK_TCK);
 
     processBuffer = initProcessBuffer();
@@ -273,8 +270,10 @@ void timeTracking(std::map<std::string, float> &uptimeBuffer, std::map<int, std:
     std::vector <int> pidList = getNewPidList(); //initiate the pidList
 
     while (true) {
-        if (gSignalStatus == SIGTERM)
+        if (gSignalStatus == SIGTERM) {
             save(processBuffer, uptimeBuffer, CLK_TCK, gSignalStatus);
+            return;
+        }
         std::vector<int> newPidList = getNewPidList();
         while (newPidList == pidList) {
             sleep(2);

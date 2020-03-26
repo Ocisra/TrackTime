@@ -8,7 +8,7 @@
 
 float getSystemUptime ();
 bool containsNumber(std::string& str);
-bool isInt (std::string& str);
+bool isFloat (std::string& str);
 std::map <int, std::pair<std::string, int>> initProcessBuffer ();
 void updateProcessBuffer(std::map<int, std::pair<std::string, int>>& processBuffer, std::vector<int>& pidList,
                          std::vector<int>& newPidList, int& offset);

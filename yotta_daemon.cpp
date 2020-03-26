@@ -11,6 +11,7 @@
 
 #include "timeTracking.h"
 #include "socket.h"
+#include "yotta_daemon.h"
 
 
 
@@ -19,6 +20,16 @@
  */
 namespace {
     volatile std::sig_atomic_t gSignalStatus;
+}
+
+void mask_sig()
+{
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGRTMIN+3);
+
+    pthread_sigmask(SIG_BLOCK, &mask, nullptr);
+
 }
 
 /**
@@ -35,17 +46,16 @@ void signalHandler (int signum) {
 }
 
 
-
-
 int main () {
     std::signal(SIGTERM, signalHandler);
-
     std::map<std::string, float> uptimeBuffer;
     std::map<int, std::pair<std::string, int>> processBuffer;
 
     std::thread thSocket(ySocket, std::ref(uptimeBuffer), std::ref(processBuffer), std::ref(gSignalStatus));
 
     timeTracking(uptimeBuffer, processBuffer, gSignalStatus);
+
+    thSocket.join();
 
     return 0;
 }
