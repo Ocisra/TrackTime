@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#This have to be executed to install yotta
+# This has to be executed to install yotta
 
 # Check if all the necessary tools are installed
 # Cmake
@@ -14,10 +14,11 @@ then
   echo -e "\e[31mMake is not installed, please install it\e[0m"
 fi
 
-# Create the directory where yotta stores the data
-mkdir /var/lib/yotta
+# Create the directory where yotta stores the datas
+mkdir -p /var/lib/yotta
 
-# copy the service config file under the right directory
+# Clean and copy the service config file under the right directory
+rm -f /usr/lib/systemd/system/yotta.service
 cp ./yotta.service /usr/lib/systemd/system/yotta.service
 
 
@@ -25,5 +26,8 @@ cp ./yotta.service /usr/lib/systemd/system/yotta.service
 cmake ./CMakeLists.txt
 make
 
-# Place executables under /bin
+# Clean and place executables under /bin
+rm -f /bin/yotta /bin/yotta_daemon
 cp ./bin/* /bin
+
+echo -e "Done"
