@@ -1,5 +1,5 @@
-#ifndef YOTTA_TIMETRACKING_H
-#define YOTTA_TIMETRACKING_H
+#ifndef YOTTA_TIMETRACKING_HPP
+#define YOTTA_TIMETRACKING_HPP
 
 #include <csignal>
 #include <map>
@@ -8,7 +8,6 @@
 
 float getSystemUptime ();
 bool containsNumber(std::string& str);
-bool isFloat (std::string& str);
 std::map <int, std::pair<std::string, int>> initProcessBuffer ();
 void updateProcessBuffer(std::map<int, std::pair<std::string, int>>& processBuffer, std::vector<int>& pidList,
                          std::vector<int>& newPidList, int& offset);
@@ -19,4 +18,4 @@ void save(std::map<int, std::pair<std::string, int>> &processBuffer, std::map<st
 void timeTracking(std::map<std::string, float> &uptimeBuffer, std::map<int, std::pair<std::string, int>> &processBuffer,
                   volatile sig_atomic_t& gSignalStatus);
 
-#endif //YOTTA_TIMETRACKING_H
+#endif //YOTTA_TIMETRACKING_HPP

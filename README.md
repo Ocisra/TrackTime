@@ -3,7 +3,7 @@
 This is a time a time tracking app and also the first project I post on Github.  
 Bugs, questions, comments, requests : open an issue.  
 Yotta has only be tested under ArchLinux but I guess it works under all the other Linux distributions.  
-The installation will delete any exectable named `yotta_daemon` or `yotta`. Use at your own risk.  
+The installation will delete any executable named `yotta_daemon` or `yotta`. Use at your own risk.  
 ***
 
 ## Installation  

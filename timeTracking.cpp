@@ -8,10 +8,15 @@
 #include <utility>
 #include <vector>
 
-#include "timeTracking.h"
-#include "yotta_daemon.h"
+#include "util.hpp"
 
+/// Dircetory where datas are stored while yotta is not running
 const std::string DATA_DIR = "/var/lib/yotta/";
+
+/// Time to sleep before checking for new/deleted processe
+const int TT_PRECISION = 2;
+
+
 
 /**
  * Get the time the system was up since last boot
@@ -24,7 +29,7 @@ float getSystemUptime () {
     float systemUptime;
     std::ifstream uptime("/proc/uptime");
     if(!uptime.is_open())
-        throw std::ios_base::failure("File not found");
+        error("File not found or permission denied : /proc/uptime", true);
     uptime >> systemUptime;
     return systemUptime;
 }
@@ -39,22 +44,6 @@ float getSystemUptime () {
  */
 bool containsNumber(std::string& str){
     return (str.find_first_of("0123456789") != std::string::npos);
-}
-
-/**
- * Check if the st
- * @param str
- * @return
- */
-bool isFloat (std::string& str) {
-    bool containsOnlyNumber = true;
-    for (auto& s : str) {
-        if (!isdigit(s) && s != '.') {
-            containsOnlyNumber = false;
-            break;
-        }
-    }
-    return containsOnlyNumber;
 }
 
 /**
@@ -80,8 +69,10 @@ std::map <int, std::pair<std::string, int>> initProcessBuffer () {
             if (containsNumber(path)) {
                 pid = std::stoi(path.substr(6));
                 std::ifstream pidStat (path + "/stat");
-                if(!pidStat.is_open())
-                    throw std::ios_base::failure("File not found");
+                if(!pidStat.is_open()) {
+                    std::string errmsg = "File not found or permission denied : " + path + "/stat";
+                    error(errmsg.c_str());
+                }
                 wordCount = 1;
                 std::string processName;
                 while (wordCount != 22) {
@@ -110,7 +101,7 @@ std::map <int, std::pair<std::string, int>> initProcessBuffer () {
 }
 
 /**
- * Update the process buffer to match with actually running processes
+ * Update the process buffer to match the running processes
  *
  * Processes that were killed had already been deleted from the process buffer. We only need to add the new ones
  * We add processes from after the last 'old' process to the end of newPidList
@@ -135,8 +126,10 @@ void updateProcessBuffer(std::map<int, std::pair<std::string, int>>& processBuff
         for (auto i = pidList.size() - offset; i < newPidList.size(); i++) {
             path = "/proc/" + std::to_string(newPidList[i]) + "/stat";
             std::ifstream pidStat (path);
-            if(!pidStat.is_open())
-                throw std::ios_base::failure("File not found");
+            if(!pidStat.is_open()) {
+                std::string errmsg = "File not found or permission denied : " + path;
+                error(errmsg.c_str());
+            }
             wordCount = 1;
             std::string processName;
             while (wordCount != 22) {
@@ -215,6 +208,7 @@ std::vector <int> getNewPidList () {
  * @param processBuffer : buffer of still active processes
  * @param uptimeBuffer : buffer of uptimes of already closed program of the actual boot
  * @param CLK_TCK : number of jiffies in a second
+ * @param gSignalStatus : signal received by the program
  */
 void save(std::map<int, std::pair<std::string, int>> &processBuffer, std::map<std::string, float> &uptimeBuffer,
           const int &CLK_TCK, volatile sig_atomic_t& gSignalStatus) {
@@ -234,9 +228,12 @@ void save(std::map<int, std::pair<std::string, int>> &processBuffer, std::map<st
         std::ofstream openingDataFile (uptimeDataFile);
         openingDataFile.close();
         uptimeDataFileR.open(uptimeDataFile);
+        if (!uptimeDataFileR.is_open()) {
+            std::string errmsg = "File not found or permission denied : " + uptimeDataFile;
+            error(errmsg.c_str());
+        }
     }
-    if (!uptimeDataFileR.is_open())
-        throw std::ios_base::failure("file not found");
+
 
     float previousUptime;
     while (uptimeDataFileR >> processName) {
@@ -260,6 +257,18 @@ void save(std::map<int, std::pair<std::string, int>> &processBuffer, std::map<st
     uptimeDataFileW.close();
 }
 
+/**
+ * Main of the thread that count processes uptimes
+ *
+ * Compare the processes actually running to those that were TT_PRECISION before
+ * If one has ended, count the uptime
+ * If one is new, add it to the processes running
+ * Repeat
+ *
+ * @param processBuffer : buffer of still active processes
+ * @param uptimeBuffer : buffer of uptimes of already closed program of the actual boot
+ * @param gSignalStatus : signal received by the program
+ */
 void timeTracking(std::map<std::string, float> &uptimeBuffer, std::map<int, std::pair<std::string, int>> &processBuffer,
                   volatile sig_atomic_t& gSignalStatus) {
 
@@ -270,23 +279,24 @@ void timeTracking(std::map<std::string, float> &uptimeBuffer, std::map<int, std:
     std::vector <int> pidList = getNewPidList(); //initiate the pidList
 
     while (true) {
-        if (gSignalStatus == SIGTERM) {
+        if (gSignalStatus == SIGTERM) { // if sigterm received, save and exit
             save(processBuffer, uptimeBuffer, CLK_TCK, gSignalStatus);
             return;
         }
         std::vector<int> newPidList = getNewPidList();
-        while (newPidList == pidList) {
-            sleep(2);
+        while (newPidList == pidList) { //check every TT_PRECISION seconds if there was a change in the list of processes
+            sleep(TT_PRECISION);
             newPidList = getNewPidList();
         }
 
         int offset = 0;
         for (auto i = 0; i + offset < pidList.size(); i++) {
             while ((i >= newPidList.size() - 1 || pidList[i + offset] != newPidList[i]) && i + offset < pidList.size()) {
+                //if the process has ended (i.e. the process is in pidList but not in newPidList), add it to uptimeBuffer
                 std::string processName = processBuffer.find(pidList[i + offset])->second.first;
                 float processStartTime = processBuffer.find(pidList[i + offset])->second.second;
                 float systemUptime = getSystemUptime();
-                float processUptime = systemUptime - (processStartTime / CLK_TCK); // in seconds
+                float processUptime = systemUptime - (processStartTime / CLK_TCK) - 1; // in seconds, -1 to average because sleep is 2 seconds
                 processBuffer.erase(processBuffer.find(pidList[i + offset]));
                 uptimeBuffer[processName] += processUptime;
                 offset++;
@@ -297,7 +307,3 @@ void timeTracking(std::map<std::string, float> &uptimeBuffer, std::map<int, std:
         pidList = newPidList;
     }
 }
-
-
-/// TODO
-/// multiple file is cleaner
