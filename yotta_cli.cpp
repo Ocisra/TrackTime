@@ -18,7 +18,7 @@ const std::string DATA_DIR = "/var/lib/yotta/";
 const char* const SOCKET_PATH = "/run/yotta/yotta_socket";
 
 /// Version
-const std::string VERSION = "0.0.0";
+const std::string VERSION = "0.2.1";
 
 /// Message displayed when -h, --help option is provided
 const std::string HELP_MSG = "Usage: yotta [options] [<process> ...]\n\n"

@@ -13,9 +13,13 @@ Then, clone this repository :
 git clone https://github.com/ocisra/yotta.git
 cd yotta
 ```  
-Finally, execute the installation script :  
+Execute the installation script :  
 ```
 sudo ./install.sh
+```
+Finally, enable the daemon
+```
+sudo systemctl enable --now yotta_daemon
 ```
   
 ## Upgrade  
@@ -41,8 +45,8 @@ Execute the uninstallation script :
 ```
 sudo ./uninstall.sh
 ```  
-Delete the directory :  
+Delete the directory : 
 ```
 cd ..
-rm -rf ./yotta
+rm -rf ./yotta 
 ```  

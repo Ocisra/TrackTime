@@ -7,11 +7,13 @@
 if command -v cmake
 then
   echo -e "\e[31mCmake is not installed, please install it\e[0m"
+  exit 1
 fi
 # Make
 if command -v make
 then
   echo -e "\e[31mMake is not installed, please install it\e[0m"
+  exit 1
 fi
 
 # Create the directory where yotta stores the datas
