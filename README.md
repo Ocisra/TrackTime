@@ -52,7 +52,7 @@ cd ..
 rm -rf ./yotta 
 ```  
 
-##Usage  
+## Usage  
 Show the uptimes off all the processes running and finished
 ```shell script
 yotta
@@ -66,7 +66,7 @@ Show the help message for more options
 yotta -h
 ```  
 
-####Help  
+#### Help  
 ```shell script
 Usage: yotta [options] [<process> ...]
 
