@@ -1,6 +1,6 @@
 # Yotta  
 
-This is a time a time tracking app and also the first project I post on Github.  
+This is a time tracking app and also the first project I post on Github.  
 Bugs, questions, comments, requests : open an issue.  
 Yotta has only be tested under ArchLinux but I guess it works under all the other Linux distributions.  
 The installation will delete any executable named `yotta_daemon` or `yotta`. Use at your own risk.  
@@ -13,13 +13,14 @@ Then, clone this repository :
 git clone https://github.com/ocisra/yotta.git
 cd yotta
 ```  
-Execute the installation script :  
+Make the installation script executable and execute it :  
 ```
+sudo chmod +x ./install.sh
 sudo ./install.sh
 ```
 Finally, enable the daemon
 ```
-sudo systemctl enable --now yotta_daemon
+sudo systemctl enable --now yotta
 ```
   
 ## Upgrade  

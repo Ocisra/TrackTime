@@ -1,25 +1,28 @@
 #!/bin/bash
 
-# This has to be executed to uninstall yotta
+# this has to be executed to uninstall yotta
 
-# Disable the daemon
-if systemctl is-enabled yotta_daemon
+# disable the daemon
+if ! systemctl is-enabled yotta
 then
-  systemctl disable --now yotta_daemon
+  systemctl disable --now yotta
 fi
-# Disactive the daemon
-if systemctl is-active yotta_daemon
+# disactive the daemon
+if ! systemctl is-active yotta
 then
-  systemctl stop yotta_daemon
+  systemctl stop yotta
 fi
 
-# Remove the directory where yotta stores the datas
+# remove the directory where yotta stores the datas
 rm -rf /var/lib/yotta
 
-# Remove the unit file
+# remove the unit file
 rm -f /usr/lib/systemd/system/yotta.service
 
-# Remove the binaries
+# remove the binaries
 rm -f /bin/yotta /bin/yotta_daemon
 
-echo -e "Done"
+# remove the log file
+rm -f /var/log/yotta.log
+
+echo -e "done"

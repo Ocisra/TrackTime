@@ -13,7 +13,7 @@
 /// Dircetory where datas are stored while yotta is not running
 const std::string DATA_DIR = "/var/lib/yotta/";
 
-/// Time to sleep before checking for new/deleted processe
+/// Time to sleep before checking for new/deleted processes
 const int TT_PRECISION = 2;
 
 
@@ -63,7 +63,7 @@ std::map <int, std::pair<std::string, int>> initProcessBuffer () {
     int processStartTime;
     char c;
 
-    for (auto& p: std::filesystem::directory_iterator("/proc")) {
+    for (auto& p: std::filesystem::directory_iterator("/proc")) { // stuck forever here
         if (p.is_directory()) {
             path = p.path().string();
             if (containsNumber(path)) {
@@ -92,11 +92,17 @@ std::map <int, std::pair<std::string, int>> initProcessBuffer () {
                     if (c == ' ')
                         wordCount += 1;
                 }
+//                std::cout<<processName;
                 pidStat >> processStartTime;
+//                std::cout<<'b';
                 processBuffer.insert({pid, std::make_pair(processName, processStartTime)});
+//                std::cout<<'z';
             }
+//            std::cout<<p.path()<<"\n";
         }
+//        std::cout<<'x';
     }
+//    std::cout<<'f';
     return processBuffer;
 }
 
@@ -283,6 +289,7 @@ void timeTracking(std::map<std::string, float> &uptimeBuffer, std::map<int, std:
             save(processBuffer, uptimeBuffer, CLK_TCK, gSignalStatus);
             return;
         }
+
         std::vector<int> newPidList = getNewPidList();
         while (newPidList == pidList) { //check every TT_PRECISION seconds if there was a change in the list of processes
             sleep(TT_PRECISION);

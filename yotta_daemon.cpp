@@ -3,6 +3,7 @@
 #include <fstream>
 #include <map>
 #include <thread>
+#include <iostream>
 
 #include "socket.hpp"
 #include "timeTracking.hpp"
@@ -20,9 +21,9 @@ const char* const LOG_FILE = "/var/log/yotta.log";
 /**
  * Declare gSignalStatus
  */
-namespace {
-    volatile std::sig_atomic_t gSignalStatus;
-}
+
+    volatile std::sig_atomic_t gSignalStatus = 0;
+
 
 
 /**
@@ -66,7 +67,7 @@ int main () {
     createNecessaryFiles();
 
     std::signal(SIGTERM, signalHandler);
-    //todo sigint
+    //todo sigint sigcontv
 
     std::map<std::string, float> uptimeBuffer;
     std::map<int, std::pair<std::string, int>> processBuffer;

@@ -1,0 +1,1 @@
+/usr/bin/c++  -pthread   CMakeFiles/yotta_daemon.dir/yotta_daemon.cpp.o CMakeFiles/yotta_daemon.dir/timeTracking.cpp.o CMakeFiles/yotta_daemon.dir/socket.cpp.o CMakeFiles/yotta_daemon.dir/util.cpp.o  -o bin/yotta_daemon 

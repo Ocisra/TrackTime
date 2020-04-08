@@ -6,6 +6,8 @@
 
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <iostream>
+#include <lcms2.h>
 
 #include "util.hpp"
 
@@ -52,17 +54,22 @@ void ySocket (std::map <std::string, float>& uptimeBuffer, std::map<int, std::pa
     listen(sockfd, 5);
     clilen = sizeof(cli_addr);
 
+    //change the permission of the socket so everyone can run yotta_cli
+    std::filesystem::permissions(SOCKET_PATH, std::filesystem::perms::owner_all | std::filesystem::perms::group_all |
+                                  std::filesystem::perms::others_all, std::filesystem::perm_options::add);
+
     while (true) {
-        fd_set read_fds;
-        FD_ZERO(&read_fds);
-        FD_SET(sockfd, &read_fds);
-
-        struct timeval timeout{};
-        timeout.tv_sec = 1;  // 1s timeout
-        timeout.tv_usec = 0;
-
-        int select_status;
         while (true) {
+            int select_status;
+
+            fd_set read_fds;
+            FD_ZERO(&read_fds);
+            FD_SET(sockfd, &read_fds);
+
+            struct timeval timeout{};
+            timeout.tv_sec = 1;  // 1s timeout
+            timeout.tv_usec = 0;
+
             select_status = select(sockfd+1, &read_fds, nullptr, nullptr, &timeout); //check if there is a client
             if (select_status == -1) { //error
                 error("Selecting the socket connection");
@@ -78,11 +85,14 @@ void ySocket (std::map <std::string, float>& uptimeBuffer, std::map<int, std::pa
         }
         newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
 
-        if (newsockfd < 0)
-            error("Accepting the connection");
+        if (newsockfd < 0) {
+                error("Accepting the connection");
+        }
+
 
         bzero(buf, 80);
         read(newsockfd, buf, 80);
+
 
         if(strcmp(buf, "uptimeBuffer\0") == 0) {
             std::map <std::string, float> uptimeBufBuf = uptimeBuffer; //to prevent the buffer to change while in communication with client

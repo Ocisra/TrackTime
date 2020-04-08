@@ -2,15 +2,18 @@
 
 # This has to be executed to install yotta
 
+# Make the uninstallation script executable
+chmod +x ./uninstall.sh
+
 # Check if all the necessary tools are installed
 # Cmake
-if command -v cmake
+if ! command -v cmake
 then
   echo -e "\e[31mCmake is not installed, please install it\e[0m"
   exit 1
 fi
 # Make
-if command -v make
+if  ! command -v make
 then
   echo -e "\e[31mMake is not installed, please install it\e[0m"
   exit 1

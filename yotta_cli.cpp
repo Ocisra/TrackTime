@@ -103,10 +103,10 @@ void getProcessBuffer (std::map<std::string, std::pair<int, float>>& toDisplay, 
     strcpy(serv_addr.sun_path, SOCKET_PATH);
     servlen = strlen(serv_addr.sun_path) + sizeof(serv_addr.sun_family);
     if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
-        error("Creating the socket");
+        error("Creating the socket", true);
 
     if (connect(sockfd, (struct sockaddr *) &serv_addr, servlen) < 0)
-        error("Connecting to the socket");
+        error("Connecting to the socket", true);
     bzero(buffer, 82);
 
 
@@ -161,10 +161,10 @@ void getUptimeBuffer (std::map<std::string, std::pair<int, float>>& toDisplay, s
     strcpy(serv_addr.sun_path, SOCKET_PATH);
     servlen = strlen(serv_addr.sun_path) + sizeof(serv_addr.sun_family);
     if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
-        error("Creating the socket");
+        error("Creating the socket", true);
 
     if (connect(sockfd, (struct sockaddr *) &serv_addr, servlen) < 0)
-        error("Connecting to the socket");
+        error("Connecting to the socket", true);
     bzero(buffer, 82);
 
 
@@ -294,16 +294,14 @@ int main (int argc, char* argv[]) {
 
     std::map<std::string, std::pair<int, float>> toDisplay; //everything in the map will be displayed
 
-
     if (!allButBoot_opt) {
-        if (system("pidof yotta_daemon") == 0) {
+        if (system("pidof yotta_daemon > /dev/null") == 0) {
             getUptimeBuffer(toDisplay, requestedProcesses);
             getProcessBuffer(toDisplay, requestedProcesses);
         } else {
             error("The daemon is not running");
         }
     }
-
     if (!boot_opt) {
         getDataFile(toDisplay, requestedProcesses);
     }
