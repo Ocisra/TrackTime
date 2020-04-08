@@ -15,7 +15,7 @@ cd yotta
 ```  
 Make the installation script executable and execute it :  
 ```
-sudo chmod +x ./install.sh
+chmod +x ./install.sh
 sudo ./install.sh
 ```
 Finally, enable the daemon
@@ -51,3 +51,34 @@ Delete the directory :
 cd ..
 rm -rf ./yotta 
 ```  
+##Usage  
+Show the uptimes off all the processes running and finished
+```shell script
+yotta
+```
+Display only the uptime the process mentionned
+```shell script
+yotta <process name>
+```
+Show the help message for more options
+```shell script
+yotta -h
+```
+####Help  
+```shell script
+Usage: yotta [options] [<process> ...]
+
+Options:
+  -v, --version                       Display the version and exit
+  -h, --help                          Dipslay this help and exit
+  -b, --boot                          Display only the informations since the last boot
+  -B, --all-but-boot                  Display all the informations except those of the last boot
+  -d, --day                           Display the uptime in days
+  -H, --hour                          Display the uptime in hours
+  -m, --minute                        Display the uptime in minutes
+  -s, --second                        Display the uptime in seconds
+  -j, --jiffy                         Display the uptime in jiffies
+  -f, --default-time-format           Display the uptime in default format
+  -g, --greater-uptime-than <time>    Display only the processes with a greater uptime than <time> seconds
+  -l, --lower-uptime-than <time>      Display only the processes with a lower uptime than <time> seconds
+```
