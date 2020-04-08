@@ -1,1 +1,0 @@
-/usr/bin/c++  -pthread   CMakeFiles/yotta.dir/yotta_cli.cpp.o CMakeFiles/yotta.dir/util.cpp.o  -o bin/yotta 
