@@ -51,6 +51,7 @@ Delete the directory :
 cd ..
 rm -rf ./yotta 
 ```  
+
 ##Usage  
 Show the uptimes off all the processes running and finished
 ```shell script
@@ -63,7 +64,8 @@ yotta <process name>
 Show the help message for more options
 ```shell script
 yotta -h
-```
+```  
+
 ####Help  
 ```shell script
 Usage: yotta [options] [<process> ...]
