@@ -9,6 +9,7 @@
 #include <iostream>
 #include <lcms2.h>
 
+#include "log.h"
 #include "util.hpp"
 
 /// Path where the socket file is located
@@ -34,11 +35,11 @@ void ySocket (std::map <std::string, float>& uptimeBuffer, std::map<int, std::pa
     char buf[80];
 
     if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
-        error("Creating the socket", true);
+        error("Creating the socket", FATAL);
 
     int enable = 1;
     if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
-        error("setsockopt(SO_REUSEADDR)", true);
+        error("setsockopt(SO_REUSEADDR)", FATAL);
 
     bzero((char *) &serv_addr, sizeof(serv_addr));
     serv_addr.sun_family = AF_UNIX;
@@ -49,7 +50,7 @@ void ySocket (std::map <std::string, float>& uptimeBuffer, std::map<int, std::pa
         unlink(SOCKET_PATH);
 
     if (bind(sockfd, (struct sockaddr *) &serv_addr, servlen) < 0)
-        error("Binding the socket", true);
+        error("Binding the socket", FATAL);
 
     listen(sockfd, 5);
     clilen = sizeof(cli_addr);
@@ -72,7 +73,7 @@ void ySocket (std::map <std::string, float>& uptimeBuffer, std::map<int, std::pa
 
             select_status = select(sockfd+1, &read_fds, nullptr, nullptr, &timeout); //check if there is a client
             if (select_status == -1) { //error
-                error("Selecting the socket connection");
+                error("Selecting the socket connection", ERROR);
             } else if (select_status > 0) { //at least one client
                 break;  // we have data, we can accept now
             }
@@ -86,7 +87,7 @@ void ySocket (std::map <std::string, float>& uptimeBuffer, std::map<int, std::pa
         newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
 
         if (newsockfd < 0) {
-                error("Accepting the connection");
+                error("Accepting the connection", ERROR);
         }
 
 

@@ -2,13 +2,14 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <unistd.h>
 #include <vector>
 
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <map>
 
+#include "log.h"
 #include "util.hpp"
 
 /// Dircetory where datas are stored while yotta is not running
@@ -18,7 +19,7 @@ const std::string DATA_DIR = "/var/lib/yotta/";
 const char* const SOCKET_PATH = "/run/yotta/yotta_socket";
 
 /// Version
-const std::string VERSION = "0.2.1";
+const std::string VERSION = "0.2.1\n";
 
 /// Message displayed when -h, --help option is provided
 const std::string HELP_MSG = "Usage: yotta [options] [<process> ...]\n\n"
@@ -38,6 +39,56 @@ const std::string HELP_MSG = "Usage: yotta [options] [<process> ...]\n\n"
                              "  -l, --lower-uptime-than <time>\tDisplay only the processes with a lower uptime than <time> seconds\n";
 
 
+float parseTime (std::string& str) {
+    float time(0);
+    float d(0), h(0), m(0), s(0), j(0);
+    std::vector<std::string> buf;
+
+    if (isFloat(str))
+        return std::stof(str);
+
+    while (!str.empty()) {
+        buf.push_back(str.substr(0, str.find_first_of("dhmsj")+1));
+        str.erase(0, str.find_first_of("dhmsj")+1);
+    }
+
+    for (auto& i : buf) {
+        if (i[i.length()-1] == 'd')
+            d += std::stof(i.substr(0, i.size()-1));
+        else if (i[i.length()-1] == 'h')
+            h += std::stof(i.substr(0, i.size()-1));
+        else if (i[i.length()-1] == 'm')
+            m += std::stof(i.substr(0, i.size()-1));
+        else if (i[i.length()-1] == 's')
+            s += std::stof(i.substr(0, i.size()-1));
+        else if (i[i.length()-1] == 'j')
+            j += std::stof(i.substr(0, i.size()-1));
+    }
+
+    time += d*24*60*60;
+    time += h*60*60;
+    time += m*60;
+    time += s;
+    time += j/sysconf(_SC_CLK_TCK);
+    return time;
+}
+
+bool isTime (std::string& str) {
+    int depth = 0;
+    const std::string accepted_chars = "dhmsj";
+    for (auto& c : str) {
+        if (!isdigit(c) && accepted_chars.find(c) == std::string::npos && c != '.')
+            return false;
+        if (c == '.')
+            depth += 1;
+        if (depth == 2)
+            return false;
+        if (accepted_chars.find(c) != std::string::npos)
+            depth = 0;
+    }
+    return true;
+}
+
 /**
  * Get the uptimes stored in the data file
  *
@@ -50,7 +101,7 @@ void getDataFile (std::map<std::string, std::pair<int, float>>& toDisplay, std::
     std::string uptimeDataFile = DATA_DIR + "uptime";
     std::ifstream uptimeDataFileR (uptimeDataFile);
     if (!uptimeDataFileR)
-        error("Data file nonexistant");
+        error("Data file nonexistant", WARN);
     std::string line;
     std::string processName;
     float processUptime;
@@ -103,10 +154,10 @@ void getProcessBuffer (std::map<std::string, std::pair<int, float>>& toDisplay, 
     strcpy(serv_addr.sun_path, SOCKET_PATH);
     servlen = strlen(serv_addr.sun_path) + sizeof(serv_addr.sun_family);
     if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
-        error("Creating the socket", true);
+        error("Creating the socket", FATAL);
 
     if (connect(sockfd, (struct sockaddr *) &serv_addr, servlen) < 0)
-        error("Connecting to the socket", true);
+        error("Connecting to the socket", FATAL);
     bzero(buffer, 82);
 
 
@@ -161,10 +212,10 @@ void getUptimeBuffer (std::map<std::string, std::pair<int, float>>& toDisplay, s
     strcpy(serv_addr.sun_path, SOCKET_PATH);
     servlen = strlen(serv_addr.sun_path) + sizeof(serv_addr.sun_family);
     if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
-        error("Creating the socket", true);
+        error("Creating the socket", FATAL);
 
     if (connect(sockfd, (struct sockaddr *) &serv_addr, servlen) < 0)
-        error("Connecting to the socket", true);
+        error("Connecting to the socket", FATAL);
     bzero(buffer, 82);
 
 
@@ -209,7 +260,8 @@ void getUptimeBuffer (std::map<std::string, std::pair<int, float>>& toDisplay, s
 int main (int argc, char* argv[]) {
     bool boot_opt(false), allButBoot_opt(false), day_opt(false), hour_opt(false), minute_opt(false), second_opt(false), 
          jiffy_opt(false), defaultTimeFormat_opt(false);
-    int greaterUptime_opt(0), lowerUptime_opt(0);
+    float greaterUptime_opt(0), lowerUptime_opt(0);
+    std::string greaterUptimeBuf, lowerUptimeBuf;
     std::vector<std::string> requestedProcesses(0); //processes the user mentioned in the command
 
     std::vector<std::string> argsBuffer;
@@ -252,27 +304,31 @@ int main (int argc, char* argv[]) {
         else if (arg == "-f" || arg == "--default-time-format")
             defaultTimeFormat_opt = true;
         else if (arg == "-g" || arg == "--greater-uptime-than") {
-            if (isFloat(argsBuffer[1]) && stoi(argsBuffer[1]) > 0)
-                greaterUptime_opt = stoi(argsBuffer[1]);
+            if (isTime(argsBuffer[1]))
+                greaterUptimeBuf = argsBuffer[1];
             else {
-                std::cout << "Provided value '" + arg + "' to argument '-g | --greater-uptime-than' is not a positive number\n"
-                             "Usage: 'yotta -g <number>' to show all the processes with a greater uptime than <number> seconds";
+                std::cout << "Provided value '" + argsBuffer[1] + "' to argument '-g | --greater-uptime-than' is not a positive integer\n\n"
+                             "Usage: 'yotta -g <time>' to show all the processes with a lower uptime than <time>\n"
+                             "       <time> is the form <<number>[d | h | m | s | j] ...> where the letters correspond to day, hour, minute, second, jiffy\n"
+                             "       Without a letter the time is counted in seconds\n";
                 exit(0);
             }
             argsBuffer.erase(argsBuffer.begin()+1);
         } else if (arg == "-l" || arg == "--lower-uptime-than") {
-            if (isFloat(argsBuffer[1]) && stoi(argsBuffer[1]) > 0)
-                lowerUptime_opt = stoi(argsBuffer[1]);
+            if (isTime(argsBuffer[1]))
+                lowerUptimeBuf = argsBuffer[1];
             else {
-                std::cout << "Provided value '" + arg + "' to argument '-l | --lower-uptime-than' is not a positive number\n"
-                             "Usage: 'yotta -l <number>' to show all the processes with a lower uptime than <number> seconds";
+                std::cout << "Provided value '" + argsBuffer[1] + "' to argument '-l | --lower-uptime-than' is not a positive integer\n\n"
+                             "Usage: 'yotta -l <time>' to show all the processes with a lower uptime than <time>\n"
+                             "       <time> is the form <<number>[d | h | m | s | j] ...> where the letters correspond to day, hour, minute, second, jiffy\n"
+                             "       Without a letter the time is counted in seconds\n";
                 exit(0);
             }
             argsBuffer.erase(argsBuffer.begin()+1);
         } else if (arg[0] != '-') {
             requestedProcesses.push_back(arg);
         } else {
-            std::cout << "Provided argument '" + arg + "' is not an argument\nUse 'yotta -h' for help";
+            std::cout << "Provided argument '" + arg + "' is not an argument\nUse 'yotta -h' for help\n";
             exit(0);
         }
         argsBuffer.erase(argsBuffer.begin());
@@ -281,14 +337,19 @@ int main (int argc, char* argv[]) {
 
     if (boot_opt && allButBoot_opt) {
         std::cout << "Using '-b | -boot' and '-B | --all-but-boot' in the same command result is impossible\n"
-                     "Use 'yotta -h' for help";
+                     "Use 'yotta -h' for help\n";
         exit(0);
     }
 
-    if (greaterUptime_opt >= lowerUptime_opt && greaterUptime_opt != 0 && lowerUptime_opt !=0) {
+    if (!greaterUptimeBuf.empty())
+        greaterUptime_opt = parseTime(greaterUptimeBuf);
+    if (!lowerUptimeBuf.empty())
+        lowerUptime_opt = parseTime(lowerUptimeBuf);
+
+    if (greaterUptime_opt >= lowerUptime_opt && greaterUptime_opt != 0 && lowerUptime_opt != 0) {
         std::cout << "The interval given by '" << lowerUptime_opt << "' and '" << greaterUptime_opt << "', "
                      "parameters of '-l | --lower-uptime-than' and '-g | --greater-uptime-than' is invalid\n"
-                     "The parameter of '-l | --lower-uptime-than' has to be greater or equal to the parameter of '-g | --greater-uptime-than'";
+                     "The parameter of '-l | --lower-uptime-than' has to be greater than the parameter of '-g | --greater-uptime-than'\n";
         exit(0);
     }
 
@@ -299,7 +360,7 @@ int main (int argc, char* argv[]) {
             getUptimeBuffer(toDisplay, requestedProcesses);
             getProcessBuffer(toDisplay, requestedProcesses);
         } else {
-            error("The daemon is not running");
+            error("The daemon is not running", WARN);
         }
     }
     if (!boot_opt) {
@@ -371,9 +432,10 @@ int main (int argc, char* argv[]) {
             }
         }
     }
+    std::cout << '\n';
     if (jiffy_opt) {
         int jps = sysconf(_SC_CLK_TCK);
-        std::cout << "\n1 jiffy = " << (float)1/jps << " second   |   " << "1 second = " << jps << " jiffies";
+        std::cout << "1 jiffy = " << (float)1/jps << " second   |   " << "1 second = " << jps << " jiffies\n";
     }
     exit(0);
 }

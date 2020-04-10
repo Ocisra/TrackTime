@@ -2,6 +2,9 @@
 #include <iomanip>
 #include <iostream>
 
+#include "log.h"
+
+const char* logName[] = {"FATAL", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"};
 
 /**
  * Log the error and eventually kill the program
@@ -9,16 +12,12 @@
  * @param msg : the message to write
  * @param isFatal : whether or not the error is fatal
  */
-void error (const char* msg, bool isFatal) {
-    std::string fatalmsg;
-    if (isFatal)
-        fatalmsg = "FATAL";
-    else
-        fatalmsg = "ERROR";
+void error (const char* msg, unsigned int level) {
+    std::string logmsg = logName[level-1]; // because table start at 0
     std::time_t t = std::time(nullptr);
-    std::cerr << fatalmsg << ' ' << std::put_time(gmtime(&t), "%F %T") << ' ' << msg << '\n';
+    std::cerr << logmsg << ' ' << std::put_time(gmtime(&t), "%F %T") << ' ' << msg << '\n';
 
-    if (isFatal)
+    if (level == FATAL)
         std::raise(SIGTERM);
 }
 

@@ -67,7 +67,7 @@ yotta -h
 ```  
 
 #### Help  
-```shell script
+```
 Usage: yotta [options] [<process> ...]
 
 Options:

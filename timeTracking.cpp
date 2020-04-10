@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "log.h"
 #include "util.hpp"
 
 /// Dircetory where datas are stored while yotta is not running
@@ -29,7 +30,7 @@ float getSystemUptime () {
     float systemUptime;
     std::ifstream uptime("/proc/uptime");
     if(!uptime.is_open())
-        error("File not found or permission denied : /proc/uptime", true);
+        error("File not found or permission denied : /proc/uptime", FATAL);
     uptime >> systemUptime;
     return systemUptime;
 }
@@ -63,46 +64,41 @@ std::map <int, std::pair<std::string, int>> initProcessBuffer () {
     int processStartTime;
     char c;
 
-    for (auto& p: std::filesystem::directory_iterator("/proc")) { // stuck forever here
+    for (auto& p: std::filesystem::directory_iterator("/proc")) {
         if (p.is_directory()) {
             path = p.path().string();
             if (containsNumber(path)) {
                 pid = std::stoi(path.substr(6));
-                std::ifstream pidStat (path + "/stat");
-                if(!pidStat.is_open()) {
-                    std::string errmsg = "File not found or permission denied : " + path + "/stat";
-                    error(errmsg.c_str());
-                }
-                wordCount = 1;
-                std::string processName;
-                while (wordCount != 22) {
-                    pidStat.get(c);
-                    if (c == '('){
-                        int depth = 0;
-                        while (c != ')' || depth != 0) {
-                            if (c == '(')
-                                depth += 1;
-                            pidStat.get(c);
-                            processName += c;
-                            if (c == ')')
-                                depth -= 1;
+                std::ifstream pidStat(path + "/stat");
+                if (pidStat.is_open()) {
+                    wordCount = 1;
+                    std::string processName;
+                    while (wordCount != 22) {
+                        pidStat.get(c);
+                        if (c == '(') {
+                            int depth = 0;
+                            while (c != ')' || depth != 0) {
+                                if (c == '(')
+                                    depth += 1;
+                                pidStat.get(c);
+                                processName += c;
+                                if (c == ')')
+                                    depth -= 1;
+                            }
+                            processName.pop_back();
                         }
-                        processName.pop_back();
+                        if (c == ' ')
+                            wordCount += 1;
                     }
-                    if (c == ' ')
-                        wordCount += 1;
+                    pidStat >> processStartTime;
+                    processBuffer.insert({pid, std::make_pair(processName, processStartTime)});
+                } else { // the process certainly ended between the beginning and the end of the function
+                    std::string errmsg = "File not found or permission denied : " + path + "/stat";
+                    error(errmsg.c_str(), INFO);
                 }
-//                std::cout<<processName;
-                pidStat >> processStartTime;
-//                std::cout<<'b';
-                processBuffer.insert({pid, std::make_pair(processName, processStartTime)});
-//                std::cout<<'z';
             }
-//            std::cout<<p.path()<<"\n";
         }
-//        std::cout<<'x';
     }
-//    std::cout<<'f';
     return processBuffer;
 }
 
@@ -131,32 +127,33 @@ void updateProcessBuffer(std::map<int, std::pair<std::string, int>>& processBuff
         // I start from the last old process and add all following process to the buffer
         for (auto i = pidList.size() - offset; i < newPidList.size(); i++) {
             path = "/proc/" + std::to_string(newPidList[i]) + "/stat";
-            std::ifstream pidStat (path);
-            if(!pidStat.is_open()) {
-                std::string errmsg = "File not found or permission denied : " + path;
-                error(errmsg.c_str());
-            }
-            wordCount = 1;
-            std::string processName;
-            while (wordCount != 22) {
-                pidStat.get(c);
-                if (c == '('){
-                    int depth = 0;
-                    while (c != ')' || depth != 0) {
-                        if (c == '(')
-                            depth += 1;
-                        pidStat.get(c);
-                        processName += c;
-                        if (c == ')')
-                            depth -= 1;
+            std::ifstream pidStat(path);
+            if (pidStat.is_open()) {
+                wordCount = 1;
+                std::string processName;
+                while (wordCount != 22) {
+                    pidStat.get(c);
+                    if (c == '(') {
+                        int depth = 0;
+                        while (c != ')' || depth != 0) {
+                            if (c == '(')
+                                depth += 1;
+                            pidStat.get(c);
+                            processName += c;
+                            if (c == ')')
+                                depth -= 1;
+                        }
+                        processName.pop_back();
                     }
-                    processName.pop_back();
+                    if (c == ' ')
+                        wordCount += 1;
                 }
-                if (c == ' ')
-                    wordCount += 1;
+                pidStat >> processStartTime;
+                processBuffer.insert({newPidList[i], std::make_pair(processName, processStartTime)});
+            } else { // the process has certainly finished between getNewPidList and now
+                std::string errmsg = "File not found or permission denied : " + path;
+                error(errmsg.c_str(), INFO);
             }
-            pidStat >> processStartTime;
-            processBuffer.insert({newPidList[i], std::make_pair(processName, processStartTime)});
         }
     }
 }
@@ -195,7 +192,9 @@ std::vector <int> getNewPidList () {
     for (auto& p: std::filesystem::directory_iterator("/proc")) {
         if (p.is_directory()) {
             path = p.path().string();
-            if (containsNumber(path)) {
+            // get the pid (process) but not the tid (thread)
+            // ./task is only contained in pid directories
+            if (containsNumber(path) && std::filesystem::exists(p.path().string() + "/task")) {
                 pid = std::stoi(path.substr(6));
                 newPidList.push_back(pid);
             }
@@ -236,7 +235,7 @@ void save(std::map<int, std::pair<std::string, int>> &processBuffer, std::map<st
         uptimeDataFileR.open(uptimeDataFile);
         if (!uptimeDataFileR.is_open()) {
             std::string errmsg = "File not found or permission denied : " + uptimeDataFile;
-            error(errmsg.c_str());
+            error(errmsg.c_str(), FATAL);
         }
     }
 
@@ -304,6 +303,8 @@ void timeTracking(std::map<std::string, float> &uptimeBuffer, std::map<int, std:
                 float processStartTime = processBuffer.find(pidList[i + offset])->second.second;
                 float systemUptime = getSystemUptime();
                 float processUptime = systemUptime - (processStartTime / CLK_TCK) - 1; // in seconds, -1 to average because sleep is 2 seconds
+                if (processUptime < 0)
+                    processUptime = 0;
                 processBuffer.erase(processBuffer.find(pidList[i + offset]));
                 uptimeBuffer[processName] += processUptime;
                 offset++;
