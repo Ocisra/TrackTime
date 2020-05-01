@@ -19,7 +19,7 @@ const std::string DATA_DIR = "/var/lib/yotta/";
 const char* const SOCKET_PATH = "/run/yotta/yotta_socket";
 
 /// Version
-const std::string VERSION = "0.2.1\n";
+const std::string VERSION = "0.2.3\n";
 
 /// Message displayed when -h, --help option is provided
 const std::string HELP_MSG = "Usage: yotta [options] [<process> ...]\n\n"
@@ -33,10 +33,10 @@ const std::string HELP_MSG = "Usage: yotta [options] [<process> ...]\n\n"
                              "  -H, --hour\t\t\t\tDisplay the uptime in hours\n"
                              "  -m, --minute\t\t\t\tDisplay the uptime in minutes\n"
                              "  -s, --second\t\t\t\tDisplay the uptime in seconds\n"
-                             "  -j, --jiffy\t\t\t\tDisplay the uptime in jiffies\n"
+                             "  -j, --clock-tick\t\t\t\tDisplay the uptime in clock ticks\n"
                              "  -f, --default-time-format\t\tDisplay the uptime in default format\n"
-                             "  -g, --greater-uptime-than <time>\tDisplay only the processes with a greater uptime than <time> seconds\n"
-                             "  -l, --lower-uptime-than <time>\tDisplay only the processes with a lower uptime than <time> seconds\n";
+                             "  -g, --greater-uptime-than <time>\tDisplay only the processes with a greater uptime than <time>\n"
+                             "  -l, --lower-uptime-than <time>\tDisplay only the processes with a lower uptime than <time>\n";
 
 
 float parseTime (std::string& str) {
@@ -100,22 +100,29 @@ bool isTime (std::string& str) {
 void getDataFile (std::map<std::string, std::pair<int, float>>& toDisplay, std::vector<std::string> requestedProcesses) {
     std::string uptimeDataFile = DATA_DIR + "uptime";
     std::ifstream uptimeDataFileR (uptimeDataFile);
-    if (!uptimeDataFileR)
-        error("Data file nonexistant", WARN);
-    std::string line;
-    std::string processName;
-    float processUptime;
+    if (uptimeDataFileR) {
+        if (uptimeDataFileR.peek() != std::ifstream::traits_type::eof()) {
+            std::string line;
+            std::string processName;
+            float processUptime;
 
-    while (getline(uptimeDataFileR, line)) {
-        processName = line.substr(0, line.find_last_of(':')); // because string index start at 0, +1-1=0
-        if (requestedProcesses.empty() || std::find(requestedProcesses.begin(), requestedProcesses.end(), processName) != requestedProcesses.end()) {
-            processUptime = std::stof(line.substr(line.find_last_of(' ') + 1)); // because string index start at 0
-            if (toDisplay.contains(processName))
-                toDisplay[processName].second += processUptime;
-            else
-                toDisplay[processName] = std::make_pair(0, processUptime);
-        }
-    }
+            while (getline(uptimeDataFileR, line)) {
+                processName = line.substr(0, line.find_last_of(':')); // because string index start at 0, +1-1=0
+                if (requestedProcesses.empty() ||
+                    std::find(requestedProcesses.begin(), requestedProcesses.end(), processName) !=
+                    requestedProcesses.end()) {
+                    processUptime = std::stof(
+                            line.substr(line.find_last_of(' ') + 1)); // because string index start at 0
+                    if (toDisplay.contains(processName))
+                        toDisplay[processName].second += processUptime;
+                    else
+                        toDisplay[processName] = std::make_pair(0, processUptime);
+                }
+            }
+        } else
+            error("No data on a previous boot", INFO);
+    } else
+        error("Data file nonexistant", WARN);
 }
 
 /**
@@ -136,66 +143,7 @@ bool isShortArg (char*& arg) {
 }
 
 /**
- * Get the buffer of actually running processes (their pid, name and uptime) and add it to the buffer to display
- *
- * Connect to the socket, receive one line for each process, parse the line and add the datas to the buffer to display
- *
- * @param toDisplay : buffer of what will be displayed
- * @param requestedProcesses : processes the user asked for in the command
- */
-void getProcessBuffer (std::map<std::string, std::pair<int, float>>& toDisplay, std::vector<std::string> requestedProcesses) {
-
-    int sockfd, servlen, n;
-    struct sockaddr_un serv_addr{};
-    char buffer[82];
-
-    bzero((char *) &serv_addr, sizeof(serv_addr));
-    serv_addr.sun_family = AF_UNIX;
-    strcpy(serv_addr.sun_path, SOCKET_PATH);
-    servlen = strlen(serv_addr.sun_path) + sizeof(serv_addr.sun_family);
-    if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
-        error("Creating the socket", FATAL);
-
-    if (connect(sockfd, (struct sockaddr *) &serv_addr, servlen) < 0)
-        error("Connecting to the socket", FATAL);
-    bzero(buffer, 82);
-
-
-    write(sockfd, "processBuffer", 13);
-
-    read(sockfd, buffer, 80);
-    write(sockfd, "1", 1); // send "ok, received"
-    n = std::stoi(buffer);
-
-    for (int i = 0; i < n; ++i) {
-        // each process is sent through the socket in the form of "pid\1name\2startTime\n"
-        bzero(buffer, 82);
-        read(sockfd, buffer, 80);
-        std::string buf;
-        buf += buffer;
-        size_t pos1 = buf.find('\1');
-        size_t pos2 = buf.find('\2');
-        size_t length1 = pos2 - (pos1 + 1);
-        std::string processName = buf.substr(pos1 + 1, length1);
-        if (requestedProcesses.empty() || std::find(requestedProcesses.begin(), requestedProcesses.end(), processName) != requestedProcesses.end()) {
-            size_t end = buf.find('\n');
-            size_t length2 = end - pos2;
-            std::string uptime = buf.substr(pos2 + 1, length2);
-            int pid = stoi(buf.substr(0, pos1));
-            float processUptime = std::stof(uptime);
-            if (toDisplay.contains(processName)) {
-                toDisplay[processName].first = pid;
-                toDisplay[processName].second += processUptime;
-            } else
-                toDisplay[processName] = std::make_pair(pid, processUptime);
-        }
-        write(sockfd, "1", 1); // to say "ok, received"
-    }
-    close(sockfd);
-}
-
-/**
- * Get the buffer of processes that have already finished (their name and uptime) and add it to the buffer to display
+ * Get the buffer of processes that have already finished or are still running (their name and uptime) and add it to the buffer to display
  *
  * Connect to the socket, receive one line for each process, parse the line and add the datas to the buffer to display
  *
@@ -259,7 +207,7 @@ void getUptimeBuffer (std::map<std::string, std::pair<int, float>>& toDisplay, s
  */
 int main (int argc, char* argv[]) {
     bool boot_opt(false), allButBoot_opt(false), day_opt(false), hour_opt(false), minute_opt(false), second_opt(false), 
-         jiffy_opt(false), defaultTimeFormat_opt(false);
+         clockTick_opt(false), defaultTimeFormat_opt(false);
     float greaterUptime_opt(0), lowerUptime_opt(0);
     std::string greaterUptimeBuf, lowerUptimeBuf;
     std::vector<std::string> requestedProcesses(0); //processes the user mentioned in the command
@@ -299,8 +247,8 @@ int main (int argc, char* argv[]) {
             minute_opt = true;
         else if (arg == "-s" || arg == "--second")
             second_opt = true;
-        else if (arg == "-j" || arg == "--jiffy")
-            jiffy_opt = true;
+        else if (arg == "-j" || arg == "--clock-tick")
+            clockTick_opt = true;
         else if (arg == "-f" || arg == "--default-time-format")
             defaultTimeFormat_opt = true;
         else if (arg == "-g" || arg == "--greater-uptime-than") {
@@ -358,7 +306,6 @@ int main (int argc, char* argv[]) {
     if (!allButBoot_opt) {
         if (system("pidof yotta_daemon > /dev/null") == 0) {
             getUptimeBuffer(toDisplay, requestedProcesses);
-            getProcessBuffer(toDisplay, requestedProcesses);
         } else {
             error("The daemon is not running", WARN);
         }
@@ -368,7 +315,7 @@ int main (int argc, char* argv[]) {
     }
 
     std::cout << std::setw(40) << "Name" << std::setw(6) << "PID";
-    if (defaultTimeFormat_opt || (!day_opt && !hour_opt && !minute_opt && !second_opt && !jiffy_opt))
+    if (defaultTimeFormat_opt || (!day_opt && !hour_opt && !minute_opt && !second_opt && !clockTick_opt))
         std::cout << std::setw(19) << "Uptime";
     if (day_opt)
         std::cout << std::setw(9) << "Days";
@@ -378,7 +325,7 @@ int main (int argc, char* argv[]) {
         std::cout << std::setw(16) << "Minutes";
     if (second_opt)
         std::cout << std::setw(20) << "Seconds";
-    if (jiffy_opt)
+    if (clockTick_opt)
         std::cout << std::setw(20) << "Jiffies";
     for (auto& s : toDisplay) {
         if (!((greaterUptime_opt && s.second.second <= greaterUptime_opt) || (lowerUptime_opt && s.second.second >= lowerUptime_opt))) { // check uptime conditions
@@ -388,7 +335,7 @@ int main (int argc, char* argv[]) {
             else
                 std::cout << std::setw(6) << "    ";
 
-            if (defaultTimeFormat_opt || (!day_opt && !hour_opt && !minute_opt && !second_opt && !jiffy_opt)) {
+            if (defaultTimeFormat_opt || (!day_opt && !hour_opt && !minute_opt && !second_opt && !clockTick_opt)) {
                 std::string uptime;
 
                 /// calculate time
@@ -426,16 +373,18 @@ int main (int argc, char* argv[]) {
                 float seconds = s.second.second;
                 std::cout << std::setw(20) << std::fixed << std::setprecision(2) << seconds;
             }
-            if (jiffy_opt) {
+            if (clockTick_opt) {
                 int jiffies = s.second.second * sysconf(_SC_CLK_TCK);
                 std::cout << std::setw(20) << jiffies;
             }
         }
     }
     std::cout << '\n';
-    if (jiffy_opt) {
+    if (clockTick_opt) {
         int jps = sysconf(_SC_CLK_TCK);
-        std::cout << "1 jiffy = " << (float)1/jps << " second   |   " << "1 second = " << jps << " jiffies\n";
+        std::cout << "1 clock tick = " << (float)1/jps << " second   |   " << "1 second = " << jps << " clock ticks\n";
     }
     exit(0);
 }
+
+//todo -h<opt> detailed help of the option

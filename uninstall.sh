@@ -25,4 +25,5 @@ rm -f /bin/yotta /bin/yotta_daemon
 # remove the log file
 rm -f /var/log/yotta.log
 
+echo -e "Remember to delete the config file you might have created under /etc"
 echo -e "done"

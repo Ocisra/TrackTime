@@ -79,7 +79,7 @@ Options:
   -H, --hour                          Display the uptime in hours
   -m, --minute                        Display the uptime in minutes
   -s, --second                        Display the uptime in seconds
-  -j, --jiffy                         Display the uptime in jiffies
+  -j, --clock-tick                    Display the uptime in clock ticks
   -f, --default-time-format           Display the uptime in default format
   -g, --greater-uptime-than <time>    Display only the processes with a greater uptime than <time> seconds
   -l, --lower-uptime-than <time>      Display only the processes with a lower uptime than <time> seconds

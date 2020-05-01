@@ -3,12 +3,14 @@
 #include <map>
 #include <string>
 #include <unistd.h>
+#include <vector>
 
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <iostream>
 #include <lcms2.h>
 
+#include "config.hpp"
 #include "log.h"
 #include "util.hpp"
 
@@ -27,7 +29,7 @@ const char* const SOCKET_PATH = "/run/yotta/yotta_socket";
  * @param gSignalStatus : signal received
  */
 void ySocket (std::map <std::string, float>& uptimeBuffer, std::map<int, std::pair<std::string, int>>& processBuffer,
-              volatile sig_atomic_t& gSignalStatus) {
+              volatile sig_atomic_t& gSignalStatus, std::map<std::string, std::vector<std::pair<int, int>>>& parallelTracking) {
     mask_sig();
     int sockfd, newsockfd, servlen;
     socklen_t clilen;
@@ -95,8 +97,46 @@ void ySocket (std::map <std::string, float>& uptimeBuffer, std::map<int, std::pa
         read(newsockfd, buf, 80);
 
 
+        int CLK_TCK = sysconf(_SC_CLK_TCK);
+        float systemUptime = getSystemUptime();
+        std::string processName;
+        float processUptime;
+
+        // Store the data in buffers to prevent them from changing
+        // and to be able to modify them without any repercussions on the time tracking part
+        std::map <int, std::pair<std::string, int>> processBufBuf = processBuffer;
+        std::map <std::string, float> uptimeBufBuf = uptimeBuffer;
+        std::map <std::string, std::vector<std::pair<int, int>>> parallelTrackingBuf = parallelTracking;
+
+        for (auto& s : processBufBuf) {
+            processName = s.second.first;
+            float processStartTime = s.second.second;
+
+            if (!config::track_parallel_processes && parallelTrackingBuf.contains(processName)) {
+                //if i don't want to track parallel running processes, i check if it is one
+                for (auto t = parallelTrackingBuf[processName].begin(); t != parallelTrackingBuf[processName].end(); ++t) {
+                    if (processStartTime >= t->first && processStartTime <= t->second) {
+                        //if the processes started when another was running, change the time it started
+                        processStartTime = t->second;
+                    } else if (processStartTime < t->first) {
+                        //if the process started before another start (and obviously ended after), remove the included uptime
+                        float includedUptime = t->second - t->first;
+                        uptimeBufBuf[processName] -= includedUptime / CLK_TCK;
+                        parallelTrackingBuf[processName].erase(t--); //decrement the iterator because we erase an element
+                                                                     //it is decremented after having been passed to erase
+                    }
+                }
+            }
+
+            processUptime = systemUptime - (processStartTime / CLK_TCK) - (config::precision / 2); //to average
+            if (processUptime < 0) // averaging a very short uptime may cause a negative uptime
+                processUptime = 0;
+            uptimeBufBuf[processName] += processUptime;
+            if (!config::track_parallel_processes)
+                parallelTrackingBuf[processName].push_back(std::make_pair(processStartTime, systemUptime*CLK_TCK)); //we store in clock ticks
+        }
+
         if(strcmp(buf, "uptimeBuffer\0") == 0) {
-            std::map <std::string, float> uptimeBufBuf = uptimeBuffer; //to prevent the buffer to change while in communication with client
             std::string bufferSize = std::to_string(uptimeBufBuf.size());
             write(newsockfd, bufferSize.c_str(), bufferSize.size()); // send the number of lines that will be sent
             read(newsockfd, buf, 1);
@@ -104,18 +144,6 @@ void ySocket (std::map <std::string, float>& uptimeBuffer, std::map<int, std::pa
             for (auto &s : uptimeBufBuf) {
                 buf[0] = '\0';
                 std::string toSend = s.first + '\1' + std::to_string(s.second) + "\n";
-                write(newsockfd, toSend.c_str(), toSend.length());
-                read(newsockfd, buf, 1); //to receive the "ok, received"
-            }
-        } else if (strcmp(buf, "processBuffer\0") == 0) {
-            std::map<int, std::pair<std::string, int>> processBufBuf = processBuffer; //to prevent the buffer to change while in communication with client
-            std::string bufferSize = std::to_string(processBufBuf.size());
-            write(newsockfd, bufferSize.c_str(), bufferSize.size()); // send the number of lines that will be sent
-            read(newsockfd, buf, 1);
-
-            for (auto& s: processBufBuf) {
-                buf[0] = '\0';
-                std::string toSend = std::to_string(s.first) + '\1' + s.second.first + '\2' + std::to_string(s.second.second) + "\n";
                 write(newsockfd, toSend.c_str(), toSend.length());
                 read(newsockfd, buf, 1); //to receive the "ok, received"
             }

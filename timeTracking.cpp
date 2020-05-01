@@ -10,30 +10,13 @@
 
 #include "log.h"
 #include "util.hpp"
+#include "config.hpp"
 
 /// Dircetory where datas are stored while yotta is not running
 const std::string DATA_DIR = "/var/lib/yotta/";
 
-/// Time to sleep before checking for new/deleted processes
-const int TT_PRECISION = 2;
 
 
-
-/**
- * Get the time the system was up since last boot
- *
- * System uptime is the first word stored in '/proc/uptime'
- *
- * @return system uptime in seconds
- */
-float getSystemUptime () {
-    float systemUptime;
-    std::ifstream uptime("/proc/uptime");
-    if(!uptime.is_open())
-        error("File not found or permission denied : /proc/uptime", FATAL);
-    uptime >> systemUptime;
-    return systemUptime;
-}
 
 /**
  * Check if a string contains at least one digit
@@ -93,7 +76,7 @@ std::map <int, std::pair<std::string, int>> initProcessBuffer () {
                     pidStat >> processStartTime;
                     processBuffer.insert({pid, std::make_pair(processName, processStartTime)});
                 } else { // the process certainly ended between the beginning and the end of the function
-                    std::string errmsg = "File not found or permission denied : " + path + "/stat";
+                    std::string errmsg = "Init : File not found or permission denied : " + path + "/stat";
                     error(errmsg.c_str(), INFO);
                 }
             }
@@ -216,7 +199,7 @@ std::vector <int> getNewPidList () {
  * @param gSignalStatus : signal received by the program
  */
 void save(std::map<int, std::pair<std::string, int>> &processBuffer, std::map<std::string, float> &uptimeBuffer,
-          const int &CLK_TCK, volatile sig_atomic_t& gSignalStatus) {
+          const int &CLK_TCK, volatile sig_atomic_t &gSignalStatus, std::map<std::string, std::vector<std::pair<int, int>>> parallelTracking) {
 
     float systemUptime = getSystemUptime();
     std::string processName;
@@ -224,8 +207,28 @@ void save(std::map<int, std::pair<std::string, int>> &processBuffer, std::map<st
     for (auto& s : processBuffer) {
         processName = s.second.first;
         float processStartTime = s.second.second;
-        processUptime = systemUptime - (processStartTime / CLK_TCK); // in seconds
+
+        if (!config::track_parallel_processes && parallelTracking.contains(processName)) {
+            //if i don't want to track parallel running processes, i check if it is one
+            for (auto t = parallelTracking[processName].begin(); t != parallelTracking[processName].end(); t++) {
+                if (processStartTime >= t->first && processStartTime <= t->second) {
+                    //if the processes started when another was running, change the time it started
+                    processStartTime = t->second;
+                } else if (processStartTime < t->first) {
+                    //if the process started before another start (and obviously ended after), remove the included uptime
+                    float includedUptime = t->second - t->first;
+                    uptimeBuffer[processName] -= includedUptime / CLK_TCK;
+                    parallelTracking[processName].erase(t--);
+                }
+            }
+        }
+
+        processUptime = systemUptime - (processStartTime / CLK_TCK) - (config::precision / 2); //to average
+        if (processUptime < 0) // averaging a very short uptime may cause a negative uptime
+            processUptime = 0;
         uptimeBuffer[processName] += processUptime;
+        if (!config::track_parallel_processes)
+            parallelTracking[processName].push_back(std::make_pair(processStartTime, systemUptime*CLK_TCK)); //we store in clock ticks
     }
     std::string uptimeDataFile = DATA_DIR + "uptime";
     std::ifstream uptimeDataFileR (uptimeDataFile);
@@ -256,8 +259,9 @@ void save(std::map<int, std::pair<std::string, int>> &processBuffer, std::map<st
     }
     uptimeDataFileR.close();
     std::ofstream uptimeDataFileW (uptimeDataFile, std::ios::out | std::ios::trunc);
+
     for (auto& s : uptimeBuffer) {
-        uptimeDataFileW << s.first << ": " << s.second << "\n";
+        uptimeDataFileW << s.first << ": " << std::fixed << s.second << std::defaultfloat << "\n";
     }
     uptimeDataFileW.close();
 }
@@ -275,7 +279,7 @@ void save(std::map<int, std::pair<std::string, int>> &processBuffer, std::map<st
  * @param gSignalStatus : signal received by the program
  */
 void timeTracking(std::map<std::string, float> &uptimeBuffer, std::map<int, std::pair<std::string, int>> &processBuffer,
-                  volatile sig_atomic_t& gSignalStatus) {
+                  volatile sig_atomic_t& gSignalStatus, std::map<std::string, std::vector<std::pair<int, int>>>& parallelTracking) {
 
     const int CLK_TCK = sysconf(_SC_CLK_TCK);
 
@@ -283,31 +287,55 @@ void timeTracking(std::map<std::string, float> &uptimeBuffer, std::map<int, std:
     uptimeBuffer = initUptimeBuffer(processBuffer);
     std::vector <int> pidList = getNewPidList(); //initiate the pidList
 
-    while (true) {
-        if (gSignalStatus == SIGTERM) { // if sigterm received, save and exit
-            save(processBuffer, uptimeBuffer, CLK_TCK, gSignalStatus);
+    while (true) { //todo a l'arret x2 uptime : save en trop ?
+        if (gSignalStatus == SIGTERM) { // if sigterm received, save and exit todo a replacer eventuellement
+            save(processBuffer, uptimeBuffer, CLK_TCK, gSignalStatus, parallelTracking);
             return;
         }
 
         std::vector<int> newPidList = getNewPidList();
         while (newPidList == pidList) { //check every TT_PRECISION seconds if there was a change in the list of processes
-            sleep(TT_PRECISION);
+            sleep(config::precision);
             newPidList = getNewPidList();
         }
+
 
         int offset = 0;
         for (auto i = 0; i + offset < pidList.size(); i++) {
             while ((i >= newPidList.size() - 1 || pidList[i + offset] != newPidList[i]) && i + offset < pidList.size()) {
-                //if the process has ended (i.e. the process is in pidList but not in newPidList), add it to uptimeBuffer
-                std::string processName = processBuffer.find(pidList[i + offset])->second.first;
-                float processStartTime = processBuffer.find(pidList[i + offset])->second.second;
-                float systemUptime = getSystemUptime();
-                float processUptime = systemUptime - (processStartTime / CLK_TCK) - 1; // in seconds, -1 to average because sleep is 2 seconds
-                if (processUptime < 0)
-                    processUptime = 0;
-                processBuffer.erase(processBuffer.find(pidList[i + offset]));
-                uptimeBuffer[processName] += processUptime;
+                if (processBuffer.contains(pidList[i+offset])) {
+                    //the process has ended (i.e. the process is in pidList but not in newPidList)
+                    std::string processName = processBuffer.find(pidList[i + offset])->second.first;
+                    float processStartTime = processBuffer.find(pidList[i + offset])->second.second;
+                    float systemUptime = getSystemUptime();
+
+                    if (!config::track_parallel_processes && parallelTracking.contains(processName)) {
+                        //if i don't want to track parallel running processes, i check if it is one
+                        for (auto s = parallelTracking[processName].begin();
+                             s != parallelTracking[processName].end(); s++) {
+                            if (processStartTime >= s->first && processStartTime <= s->second) {
+                                //if the processes started when another was running, change the time it started
+                                processStartTime = s->second;
+                            } else if (processStartTime < s->first) {
+                                //if the process started before another start (and obviously ended after), remove the included uptime
+                                float includedUptime = s->second - s->first;
+                                uptimeBuffer[processName] -= includedUptime / CLK_TCK;
+                                parallelTracking[processName].erase(s--);
+                            }
+                        }
+                    }
+
+                    //then add the uptime to uptimeBuffer
+                    float processUptime = systemUptime - (processStartTime / CLK_TCK);
+                    processBuffer.erase(
+                            processBuffer.find(pidList[i + offset])); // delete the process that just finished
+                    uptimeBuffer[processName] += processUptime; // add its uptime
+                    if (!config::track_parallel_processes)
+                        parallelTracking[processName].push_back(
+                                std::make_pair(processStartTime, systemUptime * CLK_TCK)); //we store in clock ticks
+                }
                 offset++;
+
             }
         }
         updateProcessBuffer(processBuffer, pidList, newPidList, offset);

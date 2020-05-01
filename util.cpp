@@ -1,4 +1,5 @@
 #include <csignal>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 
@@ -58,4 +59,37 @@ bool isFloat (std::string& str) {
             dotCount += 1;
     }
     return containsOnlyNumber;
+}
+
+
+void trim(std::string& s) {
+    int start = 0;
+    int end = s.length() - 1;
+
+    while (start != end && std::isspace(s[start])) {
+        start++;
+    }
+    s.erase(0, start);
+
+    end = s.length() - 1;
+    while (end != 0 && std::isspace(s[end])) {
+        end--;
+    }
+    s.erase(end + 1, s.length() - 1);
+}
+
+/**
+ * Get the time the system was up since last boot
+ *
+ * System uptime is the first word stored in '/proc/uptime'
+ *
+ * @return system uptime in seconds
+ */
+float getSystemUptime () {
+    float systemUptime;
+    std::ifstream uptime("/proc/uptime");
+    if(!uptime.is_open())
+        error("File not found or permission denied : /proc/uptime", FATAL);
+    uptime >> systemUptime;
+    return systemUptime;
 }
