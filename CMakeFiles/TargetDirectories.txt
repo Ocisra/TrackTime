@@ -1,4 +1,0 @@
-/home/ocisra/yotta/CMakeFiles/rebuild_cache.dir
-/home/ocisra/yotta/CMakeFiles/edit_cache.dir
-/home/ocisra/yotta/CMakeFiles/yotta_daemon.dir
-/home/ocisra/yotta/CMakeFiles/yotta.dir
