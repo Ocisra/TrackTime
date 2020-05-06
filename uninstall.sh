@@ -3,12 +3,12 @@
 # this has to be executed to uninstall yotta
 
 # disable the daemon
-if ! systemctl is-enabled yotta
+if systemctl is-enabled yotta
 then
   systemctl disable --now yotta
 fi
-# disactive the daemon
-if ! systemctl is-active yotta
+# deactive the daemon
+if systemctl is-active yotta
 then
   systemctl stop yotta
 fi
