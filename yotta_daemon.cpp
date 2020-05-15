@@ -1,9 +1,10 @@
 #include <csignal>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <map>
 #include <thread>
-#include <iostream>
+#include <unistd.h>
 
 #include "config.hpp"
 #include "socket.hpp"
@@ -19,9 +20,6 @@ const char* const DATA_DIR = "/var/lib/yotta";
 
 /// Path to the log file
 const char* const LOG_FILE = "/var/log/yotta.log";
-
-/// Paths to possible config file
-const char* const CONFIG_FILE[4] = {"/etc/yotta", "/etc/yotta.conf", "/etc/yotta/yotta", "/etc/yotta/yotta.conf"};
 
 /// Value of the signal received
 volatile std::sig_atomic_t gSignalStatus = 0;
@@ -57,34 +55,10 @@ void createNecessaryFiles () {
     }
 }
 
-
-void loadConfig () {
-    std::ifstream configFile;
-    int i = 0;
-    while (!configFile.is_open() && i != 4) {
-        configFile.open(CONFIG_FILE[i]);
-        ++i;
-    }
-
-    if (!configFile.is_open() || configFile.peek() == std::ifstream::traits_type::eof())
-        return;
-
-    std::string line;
-    while (getline(configFile, line)) {
-        std::string optionName = line.substr(0, line.find_last_of(':')); // because string index start at 0, +1-1=0
-        trim(optionName);
-        std::string value = line.substr(line.find_last_of(':') + 1,line.length() - line.find_last_of(':'));
-        trim(value);
-
-        if (optionName == "precision") {
-            if (isFloat(value))
-                config::precision = std::stof(value);
-        } else if (optionName == "track_parallel_processes") {
-            if (value == "true" || value == "True" || value == "t" || value == "T")
-                config::track_parallel_processes = true;
-            else if (value == "false" || value == "False" || value == "f" || value == "F")
-                config::track_parallel_processes = false;
-        }
+void testt () {
+    while (true) {
+        std::cout << config::track_parallel_processes << " " << config::precision << std::endl;
+        sleep(1);
     }
 }
 
@@ -96,7 +70,9 @@ void loadConfig () {
 int main () {
     std::freopen(LOG_FILE, "a", stderr); // redirect stderr to the log file
 
-    std::signal(SIGTERM, signalHandler);
+    std::signal(SIGTERM, signalHandler); // termination request by systemd
+    std::signal(SIGUSR1, signalHandler); // save request by the root user
+    std::signal(SIGUSR2, signalHandler); // reload request by the root user
 
     createNecessaryFiles();
 
@@ -106,8 +82,11 @@ int main () {
     std::map<int, std::pair<std::string, int>> processBuffer;
     std::map<std::string, std::vector<std::pair<int, int>>> parallelTracking;
 
+    std::thread test (testt);
+
     std::thread thSocket(ySocket, std::ref(uptimeBuffer), std::ref(processBuffer), std::ref(gSignalStatus), std::ref(parallelTracking));
 
+    test.join();
     timeTracking(uptimeBuffer, processBuffer, gSignalStatus, parallelTracking);
 
     thSocket.join();

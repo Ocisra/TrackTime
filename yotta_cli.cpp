@@ -3,14 +3,18 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
-#include <unistd.h>
 #include <vector>
+
+#include <pwd.h>
+#include <signal.h>
+#include <unistd.h>
 
 #include <sys/socket.h>
 #include <sys/un.h>
 
 #include "log.h"
 #include "util.hpp"
+#include "config.hpp"
 
 /// Dircetory where datas are stored while yotta is not running
 const std::string DATA_DIR = "/var/lib/yotta/";
@@ -33,11 +37,25 @@ const std::string HELP_MSG = "Usage: yotta [options] [<process> ...]\n\n"
                              "  -H, --hour\t\t\t\tDisplay the uptime in hours\n"
                              "  -m, --minute\t\t\t\tDisplay the uptime in minutes\n"
                              "  -s, --second\t\t\t\tDisplay the uptime in seconds\n"
-                             "  -j, --clock-tick\t\t\t\tDisplay the uptime in clock ticks\n"
+                             "  -j, --clock-tick\t\t\tDisplay the uptime in clock ticks\n"
                              "  -f, --default-time-format\t\tDisplay the uptime in default format\n"
                              "  -g, --greater-uptime-than <time>\tDisplay only the processes with a greater uptime than <time>\n"
-                             "  -l, --lower-uptime-than <time>\tDisplay only the processes with a lower uptime than <time>\n";
+                             "  -l, --lower-uptime-than <time>\tDisplay only the processes with a lower uptime than <time>\n"
+                             "\n"
+                             "Root only:\n"
+                             "  -r, --reload                        Reload the config file\n"
+                             "                                      Changing the config can lead to inaccuracies, use carefully\n"
+                             "      --save                          Save the processes that have already finished\n"
+                             "                                      Yotta will now consider them as part of previous boot\n"
+                             "  -k, --kill                          Force kill the daemon\n"
+                             "                                      This will cause all data of this boot to be lost, try to --save before\n";
 
+
+float isProcessRoot () {
+    struct passwd *pws;
+    pws = getpwuid(geteuid());
+    return (strcmp(pws->pw_name, "root") == 0);
+}
 
 float parseTime (std::string& str) {
     float time(0);
@@ -120,9 +138,9 @@ void getDataFile (std::map<std::string, std::pair<int, float>>& toDisplay, std::
                 }
             }
         } else
-            error("No data on a previous boot", INFO);
+            error("No data on a previous boot\n", INFO);
     } else
-        error("Data file nonexistant", WARN);
+        error("Data file nonexistant\n", WARN);
 }
 
 /**
@@ -160,10 +178,10 @@ void getUptimeBuffer (std::map<std::string, std::pair<int, float>>& toDisplay, s
     strcpy(serv_addr.sun_path, SOCKET_PATH);
     servlen = strlen(serv_addr.sun_path) + sizeof(serv_addr.sun_family);
     if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
-        error("Creating the socket", FATAL);
+        error("Creating the socket\n", FATAL);
 
     if (connect(sockfd, (struct sockaddr *) &serv_addr, servlen) < 0)
-        error("Connecting to the socket", FATAL);
+        error("Connecting to the socket\n", FATAL);
     bzero(buffer, 82);
 
 
@@ -206,11 +224,15 @@ void getUptimeBuffer (std::map<std::string, std::pair<int, float>>& toDisplay, s
  *         non-zero : if error
  */
 int main (int argc, char* argv[]) {
+    // Display options
     bool boot_opt(false), allButBoot_opt(false), day_opt(false), hour_opt(false), minute_opt(false), second_opt(false), 
          clockTick_opt(false), defaultTimeFormat_opt(false);
     float greaterUptime_opt(0), lowerUptime_opt(0);
     std::string greaterUptimeBuf, lowerUptimeBuf;
     std::vector<std::string> requestedProcesses(0); //processes the user mentioned in the command
+
+    // Admin options
+    bool kill_opt(false), save_opt(false), reload_opt(false);
 
     std::vector<std::string> argsBuffer;
 
@@ -225,7 +247,6 @@ int main (int argc, char* argv[]) {
         } else
             argsBuffer.emplace_back(argv[i]);
     }
-
 
     while (!argsBuffer.empty()) {
         std::string arg = argsBuffer[0];
@@ -259,7 +280,7 @@ int main (int argc, char* argv[]) {
                              "Usage: 'yotta -g <time>' to show all the processes with a lower uptime than <time>\n"
                              "       <time> is the form <<number>[d | h | m | s | j] ...> where the letters correspond to day, hour, minute, second, jiffy\n"
                              "       Without a letter the time is counted in seconds\n";
-                exit(0);
+                exit(1);
             }
             argsBuffer.erase(argsBuffer.begin()+1);
         } else if (arg == "-l" || arg == "--lower-uptime-than") {
@@ -270,14 +291,27 @@ int main (int argc, char* argv[]) {
                              "Usage: 'yotta -l <time>' to show all the processes with a lower uptime than <time>\n"
                              "       <time> is the form <<number>[d | h | m | s | j] ...> where the letters correspond to day, hour, minute, second, jiffy\n"
                              "       Without a letter the time is counted in seconds\n";
-                exit(0);
+                exit(1);
             }
             argsBuffer.erase(argsBuffer.begin()+1);
         } else if (arg[0] != '-') {
             requestedProcesses.push_back(arg);
+        } else if (arg == "-k" || arg == "--kill" || arg == "--save" || arg == "-r" || arg == "--reload"){ //root only options
+            if (isProcessRoot()) {
+                if (arg == "-k" || arg == "--kill") {
+                    kill_opt = true;
+                } else if (arg == "--save") {
+                    save_opt = true;
+                } else if (arg == "-r" || arg == "--reload") {
+                    reload_opt = true;
+                }
+            } else {
+                std::cout << "You must be root to execute '" + arg + "' argument";
+                exit(1);
+            }
         } else {
-            std::cout << "Provided argument '" + arg + "' is not an argument\nUse 'yotta -h' for help\n";
-            exit(0);
+            std::cout << "Yotta : invalid option -- '" + arg + "'\n'yotta -h' for more information";
+            exit(1);
         }
         argsBuffer.erase(argsBuffer.begin());
     }
@@ -286,7 +320,7 @@ int main (int argc, char* argv[]) {
     if (boot_opt && allButBoot_opt) {
         std::cout << "Using '-b | -boot' and '-B | --all-but-boot' in the same command result is impossible\n"
                      "Use 'yotta -h' for help\n";
-        exit(0);
+        exit(1);
     }
 
     if (!greaterUptimeBuf.empty())
@@ -298,7 +332,38 @@ int main (int argc, char* argv[]) {
         std::cout << "The interval given by '" << lowerUptime_opt << "' and '" << greaterUptime_opt << "', "
                      "parameters of '-l | --lower-uptime-than' and '-g | --greater-uptime-than' is invalid\n"
                      "The parameter of '-l | --lower-uptime-than' has to be greater than the parameter of '-g | --greater-uptime-than'\n";
-        exit(0);
+        exit(1);
+    }
+    if (kill_opt || save_opt || reload_opt) {
+        //get pid of daemon
+        char line[10]; //up to large enough pid imo
+        FILE *cmd = popen("pidof -s yotta_daemon", "r");
+        unsigned long int pid = 0;
+        fgets(line, 10, cmd);
+        pid = strtoul(line, NULL, 10);
+        pclose(cmd);
+
+        if (save_opt) {
+            if (pid < 1) {
+                error("The damon is not running\n", FATAL);
+            }
+            kill(pid, SIGUSR1);
+            exit(0);
+        }
+        if (kill_opt) {
+            if (pid < 1) {
+                error("The damon is not running\n", FATAL);
+            }
+            kill(pid, SIGKILL);
+            exit(0);
+        }
+        if (reload_opt) {
+            if (pid < 1) {
+                error("The damon is not running\n", FATAL);
+            }
+            kill(pid, SIGUSR2);
+            exit(0);
+        }
     }
 
     std::map<std::string, std::pair<int, float>> toDisplay; //everything in the map will be displayed
@@ -307,7 +372,7 @@ int main (int argc, char* argv[]) {
         if (system("pidof yotta_daemon > /dev/null") == 0) {
             getUptimeBuffer(toDisplay, requestedProcesses);
         } else {
-            error("The daemon is not running", WARN);
+            error("The daemon is not running\n", WARN);
         }
     }
     if (!boot_opt) {

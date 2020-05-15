@@ -12,11 +12,6 @@
 #include "util.hpp"
 #include "config.hpp"
 
-/// Dircetory where datas are stored while yotta is not running
-const std::string DATA_DIR = "/var/lib/yotta/";
-
-
-
 
 /**
  * Check if a string contains at least one digit
@@ -231,60 +226,6 @@ void mergeProcesses(std::map<int, std::pair<std::string, int>>& processBuffer, s
 }
 
 /**
- * Save the buffers in the data file
- *
- * Add uptimes of current boot to those in the database
- * Rewrite the whole database file with the new values
- *
- * @param processBuffer : buffer of still active processes
- * @param uptimeBuffer : buffer of uptimes of already closed program of the actual boot
- * @param CLK_TCK : number of clock ticks in a second
- * @param gSignalStatus : signal received by the program
- * @param parallelTracking : buffer of start/end time of each processes
- */
-void save(std::map<int, std::pair<std::string, int>>& processBuffer, std::map<std::string, float>& uptimeBuffer,
-          const int &CLK_TCK, volatile sig_atomic_t& gSignalStatus, std::map<std::string, std::vector<std::pair<int, int>>>& parallelTracking) {
-
-    mergeProcesses(processBuffer, uptimeBuffer, CLK_TCK, parallelTracking);
-
-    std::string processName;
-    std::string uptimeDataFile = DATA_DIR + "uptime";
-    std::ifstream uptimeDataFileR (uptimeDataFile);
-
-    // Create the file if it was deleted
-    if (!uptimeDataFileR.is_open()) {
-        std::ofstream openingDataFile (uptimeDataFile);
-        openingDataFile.close();
-        uptimeDataFileR.open(uptimeDataFile);
-        if (!uptimeDataFileR.is_open()) {
-            std::string errmsg = "File not found or permission denied : " + uptimeDataFile;
-            error(errmsg.c_str(), FATAL);
-        }
-    }
-
-    // Uptimes are stored this way : 'process name: uptime \n process name: uptime ...'
-    float previousUptime;
-    while (uptimeDataFileR >> processName) {
-        std::string buf;
-        uptimeDataFileR >> buf;
-        while (!isFloat(buf)) {
-            processName += " " + buf;
-            uptimeDataFileR >> buf;
-        }
-        previousUptime = std::stof(buf);
-        processName.pop_back(); // removing the colon
-        uptimeBuffer[processName] += previousUptime;
-    }
-    uptimeDataFileR.close();
-    std::ofstream uptimeDataFileW (uptimeDataFile, std::ios::out | std::ios::trunc);
-
-    for (auto& s : uptimeBuffer) {
-        uptimeDataFileW << s.first << ": " << std::fixed << s.second << std::defaultfloat << "\n";
-    }
-    uptimeDataFileW.close();
-}
-
-/**
  * Main of the thread that count processes uptimes
  *
  * Compare the processes actually running to those that were TT_PRECISION before
@@ -303,12 +244,13 @@ void timeTracking(std::map<std::string, float>& uptimeBuffer, std::map<int, std:
     const int CLK_TCK = sysconf(_SC_CLK_TCK);
 
     processBuffer = initProcessBuffer();
-    uptimeBuffer = initUptimeBuffer(processBuffer);
+//    uptimeBuffer = initUptimeBuffer(processBuffer); todo check if i need that
     std::vector <int> pidList = getNewPidList(); //initiate the pidList
 
     while (true) {
         if (gSignalStatus == SIGTERM) { // if sigterm received, save and exit
-            save(processBuffer, uptimeBuffer, CLK_TCK, gSignalStatus, parallelTracking);
+            mergeProcesses(processBuffer, uptimeBuffer, CLK_TCK, parallelTracking);
+            saveData(uptimeBuffer);
             return;
         }
 

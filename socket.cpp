@@ -84,7 +84,10 @@ void ySocket (std::map <std::string, float>& uptimeBuffer, std::map<int, std::pa
                 close(sockfd);
                 unlink(SOCKET_PATH);
                 return;
-            }
+            } else if (gSignalStatus == SIGUSR1)
+                saveData(uptimeBuffer);
+            else if (gSignalStatus == SIGUSR2)
+                reloadConfig();
         }
         newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
 

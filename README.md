@@ -83,4 +83,12 @@ Options:
   -f, --default-time-format           Display the uptime in default format
   -g, --greater-uptime-than <time>    Display only the processes with a greater uptime than <time> seconds
   -l, --lower-uptime-than <time>      Display only the processes with a lower uptime than <time> seconds
+
+Root only:
+  -r, --reload                        Reload the config file
+                                      Changing the config can lead to inaccuracies, use carefully
+      --save                          Save the processes that have already finished
+                                      Yotta will now consider them as part of previous boot
+  -k, --kill                          Force kill the daemon
+                                      This will cause all data of this boot to be lost, try to --save before
 ```
